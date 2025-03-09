@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?xml-model href="../../Organization/knxprod-support/knx_project_20/knx-editor.xsd" type="application/xml" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<KNX xmlns:op="http://github.com/OpenKNX/OpenKNXproducer" xmlns="http://knx.org/xml/project/20" CreatedBy="KNX MT" ToolVersion="5.1.255.16695">
+  <ManufacturerData>
+    <Manufacturer RefId="M-00FA">
+      <ApplicationPrograms>
+        <ApplicationProgram Id="%AID%" ApplicationNumber="200" ApplicationVersion="1" ProgramType="ApplicationProgram" MaskVersion="MV-07B0" Name="FIN" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de" DynamicTableManagement="false" Linkable="false" MinEtsVersion="4.0">
+          <Static>
+          </Static>
+          <Dynamic>
+            <ChannelIndependentBlock>
+              <ParameterBlock Id="%AID%_PB-nnn" Name="Actions" Text="Aktionen" Icon="dots-hexagon" HelpContext="FIN-Aktionen" ShowInComObjectTree="true">
+                <ParameterSeparator Id="%AID%_PS-nnn" Text="Aktionen" UIHint="Headline" />
+                <ParameterRefRef RefId="%AID%_UP-%T%000001_R-%T%00000101" HelpContext="BASE-Verfuegbare-Kanaele" IndentLevel="1" />
+                <ParameterSeparator Id="%AID%_PS-nnn" Text="Autorisierung" UIHint="Headline" />
+                <ParameterBlock Id="%AID%_PB-nnn" Inline="true" Layout="Grid" HelpContext="Empty">
+                  <Rows>
+                    <Row Id="%AID%_PB-nnn_R-1" Name="Row1" />
+                  </Rows>
+                  <Columns>
+                    <Column Id="%AID%_PB-nnn_C-1" Name="Col1" Width="1%" />
+                    <Column Id="%AID%_PB-nnn_C-2" Name="Col2" Width="44%" />
+                    <Column Id="%AID%_PB-nnn_C-3" Name="Col3" Width="15%" />
+                    <Column Id="%AID%_PB-nnn_C-4" Name="Col4" Width="20%" />
+                  </Columns>
+                  <ParameterSeparator Id="%AID%_PS-nnn" Text=" Warten auf Autorisierung" Cell="1,2" />
+                  <ParameterRefRef RefId="%AID%_UP-%T%000009_R-%T%00000901" Cell="1,3" HelpContext="Empty" />
+                  <ParameterRefRef RefId="%AID%_UP-%T%000008_R-%T%00000801" Cell="1,4" HelpContext="Empty" />
+                </ParameterBlock>
+                <ParameterRefRef RefId="%AID%_UP-%T%000010_R-%T%00001001" IndentLevel="1" />
+
+                <ParameterSeparator Id="%AID%_PS-52" Text="" UIHint="HorizontalRuler" />
+                <ParameterBlock Id="%AID%_PB-nnn" Inline="true" Layout="Grid">
+                  <Rows>
+                    <Row Id="%AID%_PB-nnn_R-1" />
+                  </Rows>
+                  <Columns>
+                    <Column Id="%AID%_PB-nnn_C-1" Width="7%" />
+                    <Column Id="%AID%_PB-nnn_C-2" Width="38%" />
+                    <Column Id="%AID%_PB-nnn_C-3" Width="6%" />
+                    <Column Id="%AID%_PB-nnn_C-4" Width="6%" />
+                    <Column Id="%AID%_PB-nnn_C-5" Width="25%" />
+                    <Column Id="%AID%_PB-nnn_C-6" Width="35%" />
+                  </Columns>
+                  <ParameterSeparator Id="%AID%_PS-nnn" Text="Name der Aktion" UIHint="Headline" Cell="1,2" />
+                  <ParameterSeparator Id="%AID%_PS-nnn" Text="D*" UIHint="Headline" Cell="1,3" />
+                  <ParameterSeparator Id="%AID%_PS-nnn" Text="A**" UIHint="Headline" Cell="1,4" />
+                  <ParameterSeparator Id="%AID%_PS-nnn" Text="Typ der Aktion" UIHint="Headline" Cell="1,5" />
+                  <ParameterSeparator Id="%AID%_PS-nnn" Text="Weitere Argumente" UIHint="Headline" Cell="1,6" />
+                </ParameterBlock>
+                <op:include href="Action.templ.xml" xpath="//Dynamic/ChannelIndependentBlock/*" type="template" prefix="FIN" IsInner="true" />
+                <ParameterSeparator Id="%AID%_PS-nnn" Text="D*)  Deaktiviert die Aktion, ohne die Parameter und KO-Zuordnungen zu löschen" />
+                <ParameterSeparator Id="%AID%_PS-nnn" Text="A**) Autorisierungsaktion, wird durch einen entsprechenden Finger freigeschaltet" />
+              </ParameterBlock>
+            </ChannelIndependentBlock>
+          </Dynamic>
+        </ApplicationProgram>
+      </ApplicationPrograms>
+      <Baggages>
+        <Baggage TargetPath="" Name="Help_de.zip" Id="%FILE-HELP-de%">
+          <FileInfo TimeInfo="%DATETIME%" />
+        </Baggage>
+        <Baggage TargetPath="" Name="Icons.zip" Id="%FILE-ICONS%">
+          <FileInfo TimeInfo="%DATETIME%" />
+        </Baggage>
+      </Baggages>
+    </Manufacturer>
+  </ManufacturerData>
+</KNX>
