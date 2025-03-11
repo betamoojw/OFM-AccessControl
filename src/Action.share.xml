@@ -4,12 +4,12 @@
   <ManufacturerData>
     <Manufacturer RefId="M-00FA">
       <ApplicationPrograms>
-        <ApplicationProgram Id="%AID%" ApplicationNumber="200" ApplicationVersion="1" ProgramType="ApplicationProgram" MaskVersion="MV-07B0" Name="FIN" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de" DynamicTableManagement="false" Linkable="false" MinEtsVersion="4.0">
+        <ApplicationProgram Id="%AID%" ApplicationNumber="200" ApplicationVersion="1" ProgramType="ApplicationProgram" MaskVersion="MV-07B0" Name="ACC" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de" DynamicTableManagement="false" Linkable="false" MinEtsVersion="4.0">
           <Static>
           </Static>
           <Dynamic>
             <ChannelIndependentBlock>
-              <ParameterBlock Id="%AID%_PB-nnn" Name="Actions" Text="Aktionen" Icon="dots-hexagon" HelpContext="FIN-Aktionen" ShowInComObjectTree="true">
+              <ParameterBlock Id="%AID%_PB-nnn" Name="Actions" Text="Aktionen" Icon="dots-hexagon" HelpContext="ACC-Aktionen" ShowInComObjectTree="true">
                 <ParameterSeparator Id="%AID%_PS-nnn" Text="Aktionen" UIHint="Headline" />
                 <ParameterRefRef RefId="%AID%_UP-%T%000001_R-%T%00000101" HelpContext="BASE-Verfuegbare-Kanaele" IndentLevel="1" />
                 <ParameterSeparator Id="%AID%_PS-nnn" Text="Autorisierung" UIHint="Headline" />
@@ -48,7 +48,7 @@
                   <ParameterSeparator Id="%AID%_PS-nnn" Text="Typ der Aktion" UIHint="Headline" Cell="1,5" />
                   <ParameterSeparator Id="%AID%_PS-nnn" Text="Weitere Argumente" UIHint="Headline" Cell="1,6" />
                 </ParameterBlock>
-                <op:include href="Action.templ.xml" xpath="//Dynamic/ChannelIndependentBlock/*" type="template" prefix="FIN" IsInner="true" />
+                <op:include href="Action.templ.xml" xpath="//Dynamic/ChannelIndependentBlock/*" type="template" prefix="ACC" IsInner="true" />
                 <ParameterSeparator Id="%AID%_PS-nnn" Text="D*)  Deaktiviert die Aktion, ohne die Parameter und KO-Zuordnungen zu löschen" />
                 <ParameterSeparator Id="%AID%_PS-nnn" Text="A**) Autorisierungsaktion, wird durch einen entsprechenden Finger freigeschaltet" />
               </ParameterBlock>

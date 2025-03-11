@@ -4,7 +4,7 @@
   <ManufacturerData>
     <Manufacturer RefId="M-00FA">
       <ApplicationPrograms>
-        <ApplicationProgram Id="%AID%" ApplicationNumber="200" ApplicationVersion="1" ProgramType="ApplicationProgram" MaskVersion="MV-07B0" Name="FIN" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de" DynamicTableManagement="false" Linkable="false" MinEtsVersion="4.0">
+        <ApplicationProgram Id="%AID%" ApplicationNumber="200" ApplicationVersion="1" ProgramType="ApplicationProgram" MaskVersion="MV-07B0" Name="ACC" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de" DynamicTableManagement="false" Linkable="false" MinEtsVersion="4.0">
           <Static>
             <ParameterTypes>
               <ParameterType Id="%AID%_PT-BTNInputs" Name="BTNInputs">
@@ -70,7 +70,8 @@
               <ParameterType Id="%AID%_PT-NfcScanner" Name="NfcScanner">
                 <TypeRestriction Base="Value" SizeInBit="2" UIHint="DropDown">
                   <Enumeration Text="Kein NFC" Value="0" Id="%ENID%" />
-                  <Enumeration Text="NFC auf der Touch-Frontplatine" Value="1" Id="%ENID%" />
+                  <Enumeration Text="Schaltereinsatz mit NFC" Value="1" Id="%ENID%" />
+                  <Enumeration Text="Externer NFC-Leser" Value="2" Id="%ENID%" />
                 </TypeRestriction>
               </ParameterType>
               <ParameterType Id="%AID%_PT-FingerprintScanner" Name="FingerprintScanner">
@@ -222,8 +223,8 @@
               <ParameterRef Id="%AID%_UP-%T%000028_R-%T%00002801" RefId="%AID%_UP-%T%000028" />
               <ParameterRef Id="%AID%_P-%T%000029_R-%T%00002901" RefId="%AID%_P-%T%000029" />
               <ParameterRef Id="%AID%_P-%T%000030_R-%T%00003001" RefId="%AID%_P-%T%000030" />
-              <ParameterRef Id="%AID%_P-%T%000031_R-%T%00003101" RefId="%AID%_P-%T%000031" />
-              <ParameterRef Id="%AID%_P-%T%000031_R-%T%00003102" RefId="%AID%_P-%T%000031" Access="Read" />
+              <ParameterRef Id="%AID%_P-%T%000031_R-%T%00003101" RefId="%AID%_P-%T%000031" Access="Read" />
+              <ParameterRef Id="%AID%_P-%T%000031_R-%T%00003102" RefId="%AID%_P-%T%000031" />
               <ParameterRef Id="%AID%_P-%T%000032_R-%T%00003201" RefId="%AID%_P-%T%000032" />
               <ParameterRef Id="%AID%_P-%T%000033_R-%T%00003301" RefId="%AID%_P-%T%000033" />
               <ParameterRef Id="%AID%_UP-%T%000034_R-%T%00003401" RefId="%AID%_UP-%T%000034" />
@@ -231,6 +232,17 @@
               <ParameterRef Id="%AID%_P-%T%000036_R-%T%00003601" RefId="%AID%_P-%T%000036" />
               <ParameterRef Id="%AID%_P-%T%000037_R-%T%00003701" RefId="%AID%_P-%T%000037" />
             </ParameterRefs>
+            <ParameterCalculations>
+              <ParameterCalculation Id="%AID%_PC-%T%000001" Language="JavaScript" Name="ACC_ClearFieldContent" LRTransformationFunc="LOG_Nop" RLTransformationFunc="LOG_ClearContent" >
+                <LParameters>
+                  <ParameterRefRef RefId="%AID%_P-%T%000031_R-%T%00003101" AliasName="ResultDisplay" />
+                </LParameters>
+                <RParameters>
+                  <ParameterRefRef RefId="%AID%_P-%T%000032_R-%T%00003201" />
+                  <ParameterRefRef RefId="%AID%_P-%T%000030_R-%T%00003001" />
+                </RParameters>
+              </ParameterCalculation>
+            </ParameterCalculations>
             <ComObjectTable>
               <ComObject Id="%AID%_O-%T%000001" Name="FingerTouched" Number="1" ObjectSize="1 Bit" Text="Berührung (sofort, immer)" FunctionText="Status" ReadFlag="Disabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" DatapointType="DPST-1-1" />
               <ComObject Id="%AID%_O-%T%000002" Name="FingerTouchedNoAction" Number="2" ObjectSize="1 Bit" Text="Berührung (verzögert, wenn keine Aktion zugeordnet)" FunctionText="Status" ReadFlag="Disabled" WriteFlag="Disabled" CommunicationFlag="Enabled" TransmitFlag="Enabled" UpdateFlag="Disabled" ReadOnInitFlag="Disabled" DatapointType="DPST-1-1" />
@@ -348,9 +360,9 @@
             </Script>
           </Static>
           <Dynamic>
-            <Channel Id="%AID%_CH-Basic" Name="BasicChannel" Number="1" Text="Zugangskontrolle" Icon="shield-lock-outline" HelpContext="FIN-Dokumentation">
-              <ParameterBlock Id="%AID%_PB-nnn" Name="Basic" Text="Allgemein" Icon="cog-outline" HelpContext="FIN-Dokumentation" ShowInComObjectTree="true">
-                <ParameterSeparator Id="%AID%_PS-nnn" Text="Fingerprint" UIHint="Headline" />
+            <Channel Id="%AID%_CH-Basic" Name="BasicChannel" Number="1" Text="Zutrittskontrolle" Icon="shield-lock-outline" HelpContext="ACC-Dokumentation">
+              <ParameterBlock Id="%AID%_PB-nnn" Name="Basic" Text="Allgemein" Icon="cog-outline" HelpContext="ACC-Dokumentation" ShowInComObjectTree="true">
+                <ParameterSeparator Id="%AID%_PS-nnn" Text="Zutrittskontrolle" UIHint="Headline" />
                 <ParameterSeparator Id="%AID%_PS-nnn" Text="Version: %ModuleVersion%" />
                 <ParameterSeparator Id="%AID%_PS-nnn" Text="" UIHint="HorizontalRuler" />
 
@@ -528,15 +540,15 @@
                         <choose ParamRefId="%AID%_P-%T%000036_R-%T%00003601">
                           <when test="0">
                             <!-- learn -->
-                            <Button Id="%AID%_B-%T%900001" Text="Anlernen" Cell="1,2" Name="enrollFinger" EventHandler="FIN_enrollFinger" EventHandlerOnline="ConnectionOriented" />
+                            <Button Id="%AID%_B-%T%900001" Text="Anlernen" Cell="1,2" Name="enrollFinger" EventHandler="ACC_enrollFinger" EventHandlerOnline="ConnectionOriented" />
                           </when>
                           <when test="1">
                             <!-- change -->
-                            <Button Id="%AID%_B-%T%900002" Text="Ändern" Cell="1,2" Name="changeFinger" EventHandler="FIN_changeFinger" EventHandlerOnline="ConnectionOriented" />
+                            <Button Id="%AID%_B-%T%900002" Text="Ändern" Cell="1,2" Name="changeFinger" EventHandler="ACC_changeFinger" EventHandlerOnline="ConnectionOriented" />
                           </when>
                           <when test="2">
                             <!-- delete -->
-                            <Button Id="%AID%_B-%T%900003" Text="Löschen" Name="deleteFinger" Cell="1,2" EventHandler="FIN_deleteFinger" EventHandlerOnline="ConnectionOriented" />
+                            <Button Id="%AID%_B-%T%900003" Text="Löschen" Name="deleteFinger" Cell="1,2" EventHandler="ACC_deleteFinger" EventHandlerOnline="ConnectionOriented" />
                           </when>
                         </choose>
                       </ParameterBlock>
@@ -560,7 +572,7 @@
                               <ParameterRefRef RefId="%AID%_P-%T%000026_R-%T%00002601" IndentLevel="2" HelpContext="%DOC%" />
                             </when>
                           </choose>
-                          <Button Id="%AID%_B-%T%000004" Text="Synchronisieren" Name="syncFinger" EventHandler="FIN_syncFinger" EventHandlerOnline="ConnectionOriented" />
+                          <Button Id="%AID%_B-%T%000004" Text="Synchronisieren" Name="syncFinger" EventHandler="ACC_syncFinger" EventHandlerOnline="ConnectionOriented" />
                         </when>
                       </choose>
 
@@ -581,26 +593,26 @@
                         </when>
                         <when test="1">
                           <ParameterRefRef RefId="%AID%_P-%T%000021_R-%T%00002101" IndentLevel="1" HelpContext="%DOC%" />
-                          <Button Id="%AID%_B-%T%00005" Text="Jetzt Passwort festsetzen" Name="setPassword" EventHandler="FIN_setFingerPassword" EventHandlerOnline="ConnectionOriented" />
+                          <Button Id="%AID%_B-%T%00005" Text="Jetzt Passwort festsetzen" Name="setPassword" EventHandler="ACC_setFingerPassword" EventHandlerOnline="ConnectionOriented" />
                         </when>
                         <when test="2">
                           <ParameterRefRef RefId="%AID%_P-%T%000022_R-%T%00002201" IndentLevel="1" HelpContext="%DOC%" />
                           <ParameterRefRef RefId="%AID%_P-%T%000021_R-%T%00002101" IndentLevel="1" HelpContext="%DOC%" />
-                          <Button Id="%AID%_B-%T%00006" Text="Jetzt Passwort ändern" Name="setPassword" EventHandler="FIN_setFingerPassword" EventHandlerOnline="ConnectionOriented" />
+                          <Button Id="%AID%_B-%T%00006" Text="Jetzt Passwort ändern" Name="setPassword" EventHandler="ACC_setFingerPassword" EventHandlerOnline="ConnectionOriented" />
                         </when>
                       </choose>
                       <ParameterRefRef RefId="%AID%_P-%T%000015_R-%T%00001501" IndentLevel="1" HelpContext="%DOC%" />
                       <choose ParamRefId="%AID%_P-%T%000015_R-%T%00001501">
                         <when test="1">
                           <ParameterSeparator Id="%AID%_PS-nnn" Text="Wenn Sie diese Funktion ausführen, werden alle gespeicherten Finger gelöscht und müssen neu angelernt werden." UIHint="Error" />
-                          <Button Id="%AID%_B-%T%00007" Text="Jetzt löschen" Name="resetScanner" EventHandler="FIN_resetFingerScanner" EventHandlerOnline="ConnectionOriented" />
+                          <Button Id="%AID%_B-%T%00007" Text="Jetzt löschen" Name="resetScanner" EventHandler="ACC_resetFingerScanner" EventHandlerOnline="ConnectionOriented" />
                         </when>
                       </choose>
                     </ParameterBlock>
                   </when>
                 </choose>
                 <choose ParamRefId="%AID%_UP-%T%000034_R-%T%00003401">
-                  <when test="1">
+                  <when test="!=0">
                     <!-- NFC Reader -->
                     <ParameterBlock Id="%AID%_PB-nnn" Icon="nfc-variant" Text="NFC-Scanner">  
 
@@ -610,12 +622,12 @@
                         <when test="0">
                           <ParameterRefRef RefId="%AID%_P-%T%000032_R-%T%00003201" IndentLevel="2" HelpContext="%DOC%" />
                           <ParameterRefRef RefId="%AID%_P-%T%000030_R-%T%00003001" IndentLevel="2" HelpContext="%DOC%" />
-                          <ParameterRefRef RefId="%AID%_P-%T%000031_R-%T%00003102" IndentLevel="2" HelpContext="%DOC%" />
+                          <ParameterRefRef RefId="%AID%_P-%T%000031_R-%T%00003101" IndentLevel="2" HelpContext="%DOC%" />
                         </when>
                         <when test="1 3">
                           <ParameterRefRef RefId="%AID%_P-%T%000032_R-%T%00003201" IndentLevel="2" HelpContext="%DOC%" />
                           <ParameterRefRef RefId="%AID%_P-%T%000030_R-%T%00003001" IndentLevel="2" HelpContext="%DOC%" />
-                          <ParameterRefRef RefId="%AID%_P-%T%000031_R-%T%00003101" IndentLevel="2" HelpContext="%DOC%" />
+                          <ParameterRefRef RefId="%AID%_P-%T%000031_R-%T%00003102" IndentLevel="2" HelpContext="%DOC%" />
                         </when>
                         <when test="2">
                           <ParameterRefRef RefId="%AID%_P-%T%000029_R-%T%00002901" IndentLevel="2" HelpContext="%DOC%" />
@@ -631,16 +643,16 @@
                         </Columns>
                           <choose ParamRefId="%AID%_P-%T%000037_R-%T%00003701">
                           <when test="0">
-                            <Button Id="%AID%_B-%T%920001" Text="Anlernen" Cell="1,2" Name="enrollNfc" EventHandler="FIN_enrollNfc" EventHandlerOnline="ConnectionOriented" />
+                            <Button Id="%AID%_B-%T%920001" Text="Anlernen" Cell="1,2" Name="enrollNfc" EventHandler="ACC_enrollNfc" EventHandlerOnline="ConnectionOriented" />
                           </when>
                           <when test="1">
-                            <Button Id="%AID%_B-%T%920002" Text="Ändern" Cell="1,2" Name="changeNfc" EventHandler="FIN_changeNfc" EventHandlerOnline="ConnectionOriented" />
+                            <Button Id="%AID%_B-%T%920002" Text="Ändern" Cell="1,2" Name="changeNfc" EventHandler="ACC_changeNfc" EventHandlerOnline="ConnectionOriented" />
                           </when>
                           <when test="2">
-                            <Button Id="%AID%_B-%T%920003" Text="Löschen" Cell="1,2" Name="deleteNfc" EventHandler="FIN_deleteNfc" EventHandlerOnline="ConnectionOriented" />
+                            <Button Id="%AID%_B-%T%920003" Text="Löschen" Cell="1,2" Name="deleteNfc" EventHandler="ACC_deleteNfc" EventHandlerOnline="ConnectionOriented" />
                           </when>
                           <when test="3">
-                            <Button Id="%AID%_B-%T%920005" Text="Anlegen" Cell="1,2" Name="changeNfc" EventHandler="FIN_changeNfc" EventHandlerOnline="ConnectionOriented" />
+                            <Button Id="%AID%_B-%T%920005" Text="Anlegen" Cell="1,2" Name="changeNfc" EventHandler="ACC_changeNfc" EventHandlerOnline="ConnectionOriented" />
                           </when>
                         </choose>
                       </ParameterBlock>
@@ -654,7 +666,7 @@
 
                           <ParameterSeparator Id="%AID%_PS-nnn" Text="Nach jedem Anlernvorgang wird der neue Tag automatisch synchronisiert. Zusätzlich kann hier die Synchronisation eines bestimmten Tags auch manuell angestoßen werden." UIHint="Information" />
                           <ParameterRefRef RefId="%AID%_P-%T%000033_R-%T%00003301" IndentLevel="2" HelpContext="%DOC%" />
-                          <Button Id="%AID%_B-%T%930004" Text="Synchronisieren" Name="syncNfc" EventHandler="FIN_syncNfc" EventHandlerOnline="ConnectionOriented" />
+                          <Button Id="%AID%_B-%T%930004" Text="Synchronisieren" Name="syncNfc" EventHandler="ACC_syncNfc" EventHandlerOnline="ConnectionOriented" />
                         </when>
                       </choose>
 
@@ -664,14 +676,14 @@
                       <choose ParamRefId="%AID%_P-%T%000035_R-%T%00003501">
                         <when test="1">
                           <ParameterSeparator Id="%AID%_PS-nnn" Text="Wenn Sie diese Funktion ausführen, werden alle gespeicherten NFC-Tags gelöscht und müssen neu angelernt werden." UIHint="Error" />
-                          <Button Id="%AID%_B-%T%92007" Text="Jetzt löschen" Name="resetNfcScanner" EventHandler="FIN_resetNfcScanner" EventHandlerOnline="ConnectionOriented" />
+                          <Button Id="%AID%_B-%T%92007" Text="Jetzt löschen" Name="resetNfcScanner" EventHandler="ACC_resetNfcScanner" EventHandlerOnline="ConnectionOriented" />
                         </when>
                       </choose>
                     </ParameterBlock>
                   </when>
                 </choose>
               </ParameterBlock>
-              <op:include href="Action.share.xml" xpath="//Dynamic/ChannelIndependentBlock/*" prefix="FIN" />
+              <op:include href="Action.share.xml" xpath="//Dynamic/ChannelIndependentBlock/*" prefix="ACC" />
               <op:include href="FingerAction.share.xml" xpath="//Dynamic/ChannelIndependentBlock/*" prefix="FINACT" />
               <op:include href="NfcAction.share.xml" xpath="//Dynamic/ChannelIndependentBlock/*" prefix="NFCACT" />
             </Channel>

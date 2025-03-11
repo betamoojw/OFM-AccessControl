@@ -25,7 +25,7 @@ void AccessControl::setup()
     if (switchFingerprintPower(true))
         finger->logSystemParameters();
 
-    for (uint16_t i = 0; i < ParamFIN_VisibleActions; i++)
+    for (uint16_t i = 0; i < ParamACC_VisibleActions; i++)
     {
         _channels[i] = new ActionChannel(i, finger);
         _channels[i]->setup();
@@ -49,10 +49,10 @@ void AccessControl::setup()
 
     finger->setLed(Fingerprint::State::Success);
 
-    KoFIN_FingerLedRingColor.valueNoSend((uint8_t)0, Dpt(5, 10));
-    KoFIN_FingerLedRingControl.valueNoSend((uint8_t)FINGERPRINT_LED_OFF, Dpt(5, 10));
-    KoFIN_FingerLedRingSpeed.valueNoSend((uint8_t)0, Dpt(5, 10));
-    KoFIN_FingerLedRingCount.valueNoSend((uint8_t)0, Dpt(5, 10));
+    KoACC_FingerLedRingColor.valueNoSend((uint8_t)0, Dpt(5, 10));
+    KoACC_FingerLedRingControl.valueNoSend((uint8_t)FINGERPRINT_LED_OFF, Dpt(5, 10));
+    KoACC_FingerLedRingSpeed.valueNoSend((uint8_t)0, Dpt(5, 10));
+    KoACC_FingerLedRingCount.valueNoSend((uint8_t)0, Dpt(5, 10));
 
     checkSensorTimer = delayTimerInit();
     initResetTimer = delayTimerInit();
@@ -112,7 +112,7 @@ bool AccessControl::switchFingerprintPower(bool on, bool testMode)
         bool success = finger->start();
 
         if (!testMode)
-            KoFIN_FingerScannerStatus.value(success, DPT_Switch);
+            KoACC_FingerScannerStatus.value(success, DPT_Switch);
         
         return success;
     }
@@ -145,7 +145,7 @@ void AccessControl::initFlashFingerprint()
 {
     _fingerprintStorage.init("fingerprint", FINGERPRINT_FLASH_OFFSET, FINGERPRINT_FLASH_SIZE);
     uint32_t magicWord = _fingerprintStorage.readInt(0);
-    if (magicWord != OPENKNX_FIN_FLASH_FINGER_MAGIC_WORD)
+    if (magicWord != OPENKNX_ACC_FLASH_FINGER_MAGIC_WORD)
     {
         logInfoP("Fingerprint flash contents invalid:");
         logIndentUp();
@@ -157,7 +157,7 @@ void AccessControl::initFlashFingerprint()
         _fingerprintStorage.commit();
         logDebugP("Flash cleared.");
 
-        _fingerprintStorage.writeInt(0, OPENKNX_FIN_FLASH_FINGER_MAGIC_WORD);
+        _fingerprintStorage.writeInt(0, OPENKNX_ACC_FLASH_FINGER_MAGIC_WORD);
         _fingerprintStorage.commit();
         logDebugP("Indentification code written.");
 
@@ -171,7 +171,7 @@ void AccessControl::initFlashNfc()
 {
     _nfcStorage.init("nfc", NFC_FLASH_OFFSET, NFC_FLASH_SIZE);
     uint32_t magicWord = _nfcStorage.readInt(0);
-    if (magicWord != OPENKNX_FIN_FLASH_NFC_MAGIC_WORD)
+    if (magicWord != OPENKNX_ACC_FLASH_NFC_MAGIC_WORD)
     {
         logInfoP("NFC flash contents invalid:");
         logIndentUp();
@@ -183,7 +183,7 @@ void AccessControl::initFlashNfc()
         _nfcStorage.commit();
         logDebugP("Flash cleared.");
 
-        _nfcStorage.writeInt(0, OPENKNX_FIN_FLASH_NFC_MAGIC_WORD);
+        _nfcStorage.writeInt(0, OPENKNX_ACC_FLASH_NFC_MAGIC_WORD);
         _nfcStorage.commit();
         logDebugP("Indentification code written.");
 
@@ -200,12 +200,12 @@ void AccessControl::interruptDisplayTouched()
 
 void AccessControl::interruptTouchLeft()
 {
-    KoFIN_TouchPcbButtonLeft.value(digitalRead(TOUCH_LEFT_PIN) == HIGH, DPT_Switch);
+    KoACC_TouchPcbButtonLeft.value(digitalRead(TOUCH_LEFT_PIN) == HIGH, DPT_Switch);
 }
 
 void AccessControl::interruptTouchRight()
 {
-    KoFIN_TouchPcbButtonRight.value(digitalRead(TOUCH_RIGHT_PIN) == HIGH, DPT_Switch);
+    KoACC_TouchPcbButtonRight.value(digitalRead(TOUCH_RIGHT_PIN) == HIGH, DPT_Switch);
 }
 
 void AccessControl::loop()
@@ -215,12 +215,12 @@ void AccessControl::loop()
 
     if (!isLocked)
     {
-        if (ParamFIN_ScanMode == 0)
+        if (ParamACC_ScanMode == 0)
         {
             if (touched)
             {
                 logInfoP("Touched");
-                KoFIN_FingerTouched.value(true, DPT_Switch);
+                KoACC_FingerTouched.value(true, DPT_Switch);
 
                 if (switchFingerprintPower(true))
                 {
@@ -236,10 +236,10 @@ void AccessControl::loop()
             }
             else
             {
-                if (KoFIN_FingerTouched.value(DPT_Switch) &&
+                if (KoACC_FingerTouched.value(DPT_Switch) &&
                     !finger->hasFinger())
                 {
-                    KoFIN_FingerTouched.value(false, DPT_Switch);
+                    KoACC_FingerTouched.value(false, DPT_Switch);
                     shutdownSensorTimer = delayTimerInit();
                 }
             }
@@ -265,11 +265,11 @@ void AccessControl::loop()
 
         if (checkSensorTimer > 0 && delayCheck(checkSensorTimer, CHECK_SENSOR_DELAY))
         {
-            bool currentStatus = KoFIN_FingerScannerStatus.value(DPT_Switch);
+            bool currentStatus = KoACC_FingerScannerStatus.value(DPT_Switch);
             bool success = finger->checkSensor();
             if (currentStatus != success)
             {
-                KoFIN_FingerScannerStatus.value(success, DPT_Switch);
+                KoACC_FingerScannerStatus.value(success, DPT_Switch);
                 logInfoP("Check scanner status: %u", success);
             }
 
@@ -287,7 +287,7 @@ void AccessControl::loop()
             finger->setLed(Fingerprint::State::None);
             digitalWrite(LED_GREEN_PIN, LOW);
 
-            if (ParamFIN_ScanMode == 0)
+            if (ParamACC_ScanMode == 0)
                 switchFingerprintPower(false);
 
             initResetTimer = 0;
@@ -313,7 +313,7 @@ void AccessControl::loop()
             resetTouchPcbLedTimerFast = 0;
         }
 
-        for (uint16_t i = 0; i < ParamFIN_VisibleActions; i++)
+        for (uint16_t i = 0; i < ParamACC_VisibleActions; i++)
             _channels[i]->loop();
     }
 
@@ -344,15 +344,15 @@ void AccessControl::loopNfc()
         if (delayCheck(enrollNfcStarted, NFC_ENROLL_TIMEOUT))
         {
             logInfoP("Enrolling NFC tag failed.");
-            KoFIN_FingerEnrollSuccess.value(false, DPT_Switch);
-            KoFIN_FingerEnrollFailedId.value(enrollNfcId, Dpt(7, 1));
+            KoACC_FingerEnrollSuccess.value(false, DPT_Switch);
+            KoACC_FingerEnrollFailedId.value(enrollNfcId, Dpt(7, 1));
     
-            KoFIN_FingerEnrollSuccessData.valueNoSend(enrollNfcId, Dpt(15, 1, 0)); // access identification code
-            KoFIN_FingerEnrollSuccessData.valueNoSend(true, Dpt(15, 1, 1));     // detection error
-            KoFIN_FingerEnrollSuccessData.valueNoSend(false, Dpt(15, 1, 2));    // permission accepted
-            KoFIN_FingerEnrollSuccessData.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
-            KoFIN_FingerEnrollSuccessData.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
-            KoFIN_FingerEnrollSuccessData.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
+            KoACC_FingerEnrollSuccessData.valueNoSend(enrollNfcId, Dpt(15, 1, 0)); // access identification code
+            KoACC_FingerEnrollSuccessData.valueNoSend(true, Dpt(15, 1, 1));     // detection error
+            KoACC_FingerEnrollSuccessData.valueNoSend(false, Dpt(15, 1, 2));    // permission accepted
+            KoACC_FingerEnrollSuccessData.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
+            KoACC_FingerEnrollSuccessData.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
+            KoACC_FingerEnrollSuccessData.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
 
             digitalWrite(LED_RED_PIN, HIGH);
             resetTouchPcbLedTimer = delayTimerInit();
@@ -389,21 +389,21 @@ void AccessControl::loopNfc()
 
             if (enrollNfcStarted > 0)
             {
-                uint32_t storageOffset = FIN_CalcNfcStorageOffset(enrollNfcId);
+                uint32_t storageOffset = ACC_CalcNfcStorageOffset(enrollNfcId);
                 logDebugP("storageOffset: %d", storageOffset);
                 _nfcStorage.write(storageOffset, const_cast<uint8_t*>(uniqueId), uniqueIdLength);
                 _nfcStorage.commit();
 
                 logInfoP("Enrolled to nfcID %u.", enrollNfcId);
-                KoFIN_FingerEnrollSuccess.value(true, DPT_Switch);
-                KoFIN_FingerEnrollSuccessId.value(enrollNfcId, Dpt(7, 1));
+                KoACC_FingerEnrollSuccess.value(true, DPT_Switch);
+                KoACC_FingerEnrollSuccessId.value(enrollNfcId, Dpt(7, 1));
         
-                KoFIN_FingerEnrollSuccess.valueNoSend(enrollNfcId, Dpt(15, 1, 0)); // access identification code
-                KoFIN_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 1));    // detection error
-                KoFIN_FingerEnrollSuccess.valueNoSend(true, Dpt(15, 1, 2));     // permission accepted
-                KoFIN_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
-                KoFIN_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
-                KoFIN_FingerEnrollSuccess.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
+                KoACC_FingerEnrollSuccess.valueNoSend(enrollNfcId, Dpt(15, 1, 0)); // access identification code
+                KoACC_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 1));    // detection error
+                KoACC_FingerEnrollSuccess.valueNoSend(true, Dpt(15, 1, 2));     // permission accepted
+                KoACC_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
+                KoACC_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
+                KoACC_FingerEnrollSuccess.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
                 
                 digitalWrite(LED_GREEN_PIN, HIGH);
                 resetTouchPcbLedTimer = delayTimerInit();
@@ -417,7 +417,7 @@ void AccessControl::loopNfc()
                 uint16_t foundId = 0;
                 for (uint16_t nfcId = 0; nfcId < MAX_NFCS; nfcId++)
                 {
-                    storageOffset = FIN_CalcNfcStorageOffset(nfcId);
+                    storageOffset = ACC_CalcNfcStorageOffset(nfcId);
                     _nfcStorage.read(storageOffset, tagUid, 10);
                     if (!memcmp(tagUid, uniqueId, uniqueIdLength))
                     {
@@ -435,17 +435,17 @@ void AccessControl::loopNfc()
                 else
                 {
                     logInfoP("Tag not found");
-                    KoFIN_NfcScanSuccess.value(false, DPT_Switch);
+                    KoACC_NfcScanSuccess.value(false, DPT_Switch);
             
-                    KoFIN_NfcScanSuccessData.valueNoSend((uint32_t)0, Dpt(15, 1, 0)); // access identification code (unknown)
-                    KoFIN_NfcScanSuccessData.valueNoSend(true, Dpt(15, 1, 1));        // detection error
-                    KoFIN_NfcScanSuccessData.valueNoSend(false, Dpt(15, 1, 2));       // permission accepted
-                    KoFIN_NfcScanSuccessData.valueNoSend(false, Dpt(15, 1, 3));       // read direction (not used)
-                    KoFIN_NfcScanSuccessData.valueNoSend(false, Dpt(15, 1, 4));       // encryption (not used for now)
-                    KoFIN_NfcScanSuccessData.value((uint8_t)0, Dpt(15, 1, 5));        // index of access identification code (not used)
+                    KoACC_NfcScanSuccessData.valueNoSend((uint32_t)0, Dpt(15, 1, 0)); // access identification code (unknown)
+                    KoACC_NfcScanSuccessData.valueNoSend(true, Dpt(15, 1, 1));        // detection error
+                    KoACC_NfcScanSuccessData.valueNoSend(false, Dpt(15, 1, 2));       // permission accepted
+                    KoACC_NfcScanSuccessData.valueNoSend(false, Dpt(15, 1, 3));       // read direction (not used)
+                    KoACC_NfcScanSuccessData.valueNoSend(false, Dpt(15, 1, 4));       // encryption (not used for now)
+                    KoACC_NfcScanSuccessData.value((uint8_t)0, Dpt(15, 1, 5));        // index of access identification code (not used)
             
                     // if NFC tag present, but scan failed, reset all authentication action calls
-                    for (uint16_t i = 0; i < ParamFIN_VisibleActions; i++)
+                    for (uint16_t i = 0; i < ParamACC_VisibleActions; i++)
                         _channels[i]->resetActionCall();
 
                     digitalWrite(LED_RED_PIN, HIGH);
@@ -470,15 +470,15 @@ void AccessControl::loopNfc()
 
 void AccessControl::processNfcScanSuccess(uint16_t foundId, bool external)
 {
-    KoFIN_NfcScanSuccess.value(true, DPT_Switch);
-    KoFIN_NfcScanSuccessId.value(foundId, Dpt(7, 1));
+    KoACC_NfcScanSuccess.value(true, DPT_Switch);
+    KoACC_NfcScanSuccessId.value(foundId, Dpt(7, 1));
 
-    KoFIN_NfcScanSuccessData.valueNoSend(foundId, Dpt(15, 1, 0)); // access identification code
-    KoFIN_NfcScanSuccessData.valueNoSend(false, Dpt(15, 1, 1));    // detection error
-    KoFIN_NfcScanSuccessData.valueNoSend(true, Dpt(15, 1, 2));     // permission accepted
-    KoFIN_NfcScanSuccessData.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
-    KoFIN_NfcScanSuccessData.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
-    KoFIN_NfcScanSuccessData.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
+    KoACC_NfcScanSuccessData.valueNoSend(foundId, Dpt(15, 1, 0)); // access identification code
+    KoACC_NfcScanSuccessData.valueNoSend(false, Dpt(15, 1, 1));    // detection error
+    KoACC_NfcScanSuccessData.valueNoSend(true, Dpt(15, 1, 2));     // permission accepted
+    KoACC_NfcScanSuccessData.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
+    KoACC_NfcScanSuccessData.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
+    KoACC_NfcScanSuccessData.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
 
     bool actionExecuted = false;
     for (size_t i = 0; i < ParamNFCACT_NfcActionCount; i++)
@@ -487,7 +487,7 @@ void AccessControl::processNfcScanSuccess(uint16_t foundId, bool external)
         if (nfcId == foundId)
         {
             uint16_t actionId = knx.paramWord(NFCACT_FaActionId + NFCACT_ParamBlockOffset + i * NFCACT_ParamBlockSize) - 1;
-            if (actionId < FIN_VisibleActions)
+            if (actionId < ACC_VisibleActions)
                 actionExecuted |= _channels[actionId]->processScan(foundId);
             else
                 logInfoP("Invalid ActionId: %d", actionId);
@@ -516,23 +516,23 @@ bool AccessControl::searchForFinger()
 {
     if (!finger->hasFinger())
     {
-        if (ParamFIN_ScanMode == 1 &&
-            KoFIN_FingerTouched.value(DPT_Switch))
-            KoFIN_FingerTouched.value(false, DPT_Switch);
+        if (ParamACC_ScanMode == 1 &&
+            KoACC_FingerTouched.value(DPT_Switch))
+            KoACC_FingerTouched.value(false, DPT_Switch);
 
         hasLastFoundLocation = false;
         return false;
     }
 
-    if (ParamFIN_ScanMode == 1 &&
-        !KoFIN_FingerTouched.value(DPT_Switch))
-        KoFIN_FingerTouched.value(true, DPT_Switch);
+    if (ParamACC_ScanMode == 1 &&
+        !KoACC_FingerTouched.value(DPT_Switch))
+        KoACC_FingerTouched.value(true, DPT_Switch);
     
     Fingerprint::FindFingerResult findFingerResult = finger->findFingerprint();
 
     if (findFingerResult.found)
     {
-        if (ParamFIN_ScanMode == 1 &&
+        if (ParamACC_ScanMode == 1 &&
             hasLastFoundLocation && lastFoundLocation == findFingerResult.location)
         {
             logDebugP("Same finger found in location %d and ignored", findFingerResult.location);
@@ -552,17 +552,17 @@ bool AccessControl::searchForFinger()
         finger->setLed(Fingerprint::ScanNoMatch);
 
         logInfoP("Finger not found");
-        KoFIN_FingerScanSuccess.value(false, DPT_Switch);
+        KoACC_FingerScanSuccess.value(false, DPT_Switch);
 
-        KoFIN_FingerScanSuccessData.valueNoSend((uint32_t)0, Dpt(15, 1, 0)); // access identification code (unknown)
-        KoFIN_FingerScanSuccessData.valueNoSend(true, Dpt(15, 1, 1));        // detection error
-        KoFIN_FingerScanSuccessData.valueNoSend(false, Dpt(15, 1, 2));       // permission accepted
-        KoFIN_FingerScanSuccessData.valueNoSend(false, Dpt(15, 1, 3));       // read direction (not used)
-        KoFIN_FingerScanSuccessData.valueNoSend(false, Dpt(15, 1, 4));       // encryption (not used for now)
-        KoFIN_FingerScanSuccessData.value((uint8_t)0, Dpt(15, 1, 5));        // index of access identification code (not used)
+        KoACC_FingerScanSuccessData.valueNoSend((uint32_t)0, Dpt(15, 1, 0)); // access identification code (unknown)
+        KoACC_FingerScanSuccessData.valueNoSend(true, Dpt(15, 1, 1));        // detection error
+        KoACC_FingerScanSuccessData.valueNoSend(false, Dpt(15, 1, 2));       // permission accepted
+        KoACC_FingerScanSuccessData.valueNoSend(false, Dpt(15, 1, 3));       // read direction (not used)
+        KoACC_FingerScanSuccessData.valueNoSend(false, Dpt(15, 1, 4));       // encryption (not used for now)
+        KoACC_FingerScanSuccessData.value((uint8_t)0, Dpt(15, 1, 5));        // index of access identification code (not used)
 
         // if finger present, but scan failed, reset all authentication action calls
-        for (uint16_t i = 0; i < ParamFIN_VisibleActions; i++)
+        for (uint16_t i = 0; i < ParamACC_VisibleActions; i++)
             _channels[i]->resetActionCall();
     }
 
@@ -572,21 +572,21 @@ bool AccessControl::searchForFinger()
 
 void AccessControl::resetRingLed()
 {
-    finger->setLed(KoFIN_FingerLedRingColor.value(Dpt(5, 10)), KoFIN_FingerLedRingControl.value(Dpt(5, 10)), KoFIN_FingerLedRingSpeed.value(Dpt(5, 10)), KoFIN_FingerLedRingCount.value(Dpt(5, 10)));
-    logInfoP("LED ring: color=%u, control=%u, speed=%u, count=%u", (uint8_t)KoFIN_FingerLedRingColor.value(Dpt(5, 10)), (uint8_t)KoFIN_FingerLedRingControl.value(Dpt(5, 10)), (uint8_t)KoFIN_FingerLedRingSpeed.value(Dpt(5, 10)), (uint8_t)KoFIN_FingerLedRingCount.value(Dpt(5, 10)));
+    finger->setLed(KoACC_FingerLedRingColor.value(Dpt(5, 10)), KoACC_FingerLedRingControl.value(Dpt(5, 10)), KoACC_FingerLedRingSpeed.value(Dpt(5, 10)), KoACC_FingerLedRingCount.value(Dpt(5, 10)));
+    logInfoP("LED ring: color=%u, control=%u, speed=%u, count=%u", (uint8_t)KoACC_FingerLedRingColor.value(Dpt(5, 10)), (uint8_t)KoACC_FingerLedRingControl.value(Dpt(5, 10)), (uint8_t)KoACC_FingerLedRingSpeed.value(Dpt(5, 10)), (uint8_t)KoACC_FingerLedRingCount.value(Dpt(5, 10)));
 }
 
 void AccessControl::processFingerScanSuccess(uint16_t location, bool external)
 {
-    KoFIN_FingerScanSuccess.value(true, DPT_Switch);
-    KoFIN_FingerScanSuccessId.value(location, Dpt(7, 1));
+    KoACC_FingerScanSuccess.value(true, DPT_Switch);
+    KoACC_FingerScanSuccessId.value(location, Dpt(7, 1));
 
-    KoFIN_FingerScanSuccessData.valueNoSend(location, Dpt(15, 1, 0)); // access identification code
-    KoFIN_FingerScanSuccessData.valueNoSend(false, Dpt(15, 1, 1));    // detection error
-    KoFIN_FingerScanSuccessData.valueNoSend(true, Dpt(15, 1, 2));     // permission accepted
-    KoFIN_FingerScanSuccessData.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
-    KoFIN_FingerScanSuccessData.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
-    KoFIN_FingerScanSuccessData.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
+    KoACC_FingerScanSuccessData.valueNoSend(location, Dpt(15, 1, 0)); // access identification code
+    KoACC_FingerScanSuccessData.valueNoSend(false, Dpt(15, 1, 1));    // detection error
+    KoACC_FingerScanSuccessData.valueNoSend(true, Dpt(15, 1, 2));     // permission accepted
+    KoACC_FingerScanSuccessData.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
+    KoACC_FingerScanSuccessData.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
+    KoACC_FingerScanSuccessData.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
 
     bool actionExecuted = false;
     for (size_t i = 0; i < ParamFINACT_FingerActionCount; i++)
@@ -595,7 +595,7 @@ void AccessControl::processFingerScanSuccess(uint16_t location, bool external)
         if (fingerId == location)
         {
             uint16_t actionId = knx.paramWord(FINACT_FaActionId + FINACT_ParamBlockOffset + i * FINACT_ParamBlockSize) - 1;
-            if (actionId < FIN_VisibleActions)
+            if (actionId < ACC_VisibleActions)
                 actionExecuted |= _channels[actionId]->processScan(location);
             else
                 logInfoP("Invalid ActionId: %d", actionId);
@@ -612,7 +612,7 @@ void AccessControl::processFingerScanSuccess(uint16_t location, bool external)
         if (!external)
             finger->setLed(Fingerprint::ScanMatchNoAction);
         
-        KoFIN_FingerTouchedNoAction.value(true, DPT_Switch);
+        KoACC_FingerTouchedNoAction.value(true, DPT_Switch);
     }
 }
 
@@ -642,30 +642,30 @@ bool AccessControl::enrollFinger(uint16_t location)
     if (success)
     {
         logInfoP("Enrolled to location %d.", location);
-        KoFIN_FingerEnrollSuccess.value(true, DPT_Switch);
-        KoFIN_FingerEnrollSuccessId.value(location, Dpt(7, 1));
+        KoACC_FingerEnrollSuccess.value(true, DPT_Switch);
+        KoACC_FingerEnrollSuccessId.value(location, Dpt(7, 1));
 
-        KoFIN_FingerEnrollSuccess.valueNoSend(location, Dpt(15, 1, 0)); // access identification code
-        KoFIN_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 1));    // detection error
-        KoFIN_FingerEnrollSuccess.valueNoSend(true, Dpt(15, 1, 2));     // permission accepted
-        KoFIN_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
-        KoFIN_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
-        KoFIN_FingerEnrollSuccess.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
+        KoACC_FingerEnrollSuccess.valueNoSend(location, Dpt(15, 1, 0)); // access identification code
+        KoACC_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 1));    // detection error
+        KoACC_FingerEnrollSuccess.valueNoSend(true, Dpt(15, 1, 2));     // permission accepted
+        KoACC_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
+        KoACC_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
+        KoACC_FingerEnrollSuccess.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
 
         finger->setLed(Fingerprint::State::Success);
     }
     else
     {
         logInfoP("Enrolling template failed.");
-        KoFIN_FingerEnrollSuccess.value(false, DPT_Switch);
-        KoFIN_FingerEnrollFailedId.value(location, Dpt(7, 1));
+        KoACC_FingerEnrollSuccess.value(false, DPT_Switch);
+        KoACC_FingerEnrollFailedId.value(location, Dpt(7, 1));
 
-        KoFIN_FingerEnrollSuccessData.valueNoSend(location, Dpt(15, 1, 0)); // access identification code
-        KoFIN_FingerEnrollSuccessData.valueNoSend(true, Dpt(15, 1, 1));     // detection error
-        KoFIN_FingerEnrollSuccessData.valueNoSend(false, Dpt(15, 1, 2));    // permission accepted
-        KoFIN_FingerEnrollSuccessData.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
-        KoFIN_FingerEnrollSuccessData.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
-        KoFIN_FingerEnrollSuccessData.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
+        KoACC_FingerEnrollSuccessData.valueNoSend(location, Dpt(15, 1, 0)); // access identification code
+        KoACC_FingerEnrollSuccessData.valueNoSend(true, Dpt(15, 1, 1));     // detection error
+        KoACC_FingerEnrollSuccessData.valueNoSend(false, Dpt(15, 1, 2));    // permission accepted
+        KoACC_FingerEnrollSuccessData.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
+        KoACC_FingerEnrollSuccessData.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
+        KoACC_FingerEnrollSuccessData.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
 
         finger->setLed(Fingerprint::State::Failed);
     }
@@ -688,15 +688,15 @@ bool AccessControl::deleteFinger(uint16_t location, bool sync)
     if (success)
     {
         logInfoP("Template deleted from location %d.", location);
-        KoFIN_FingerDeleteSuccess.value(true, DPT_Switch);
-        KoFIN_FingerDeleteSuccessId.value(location, Dpt(7, 1));
+        KoACC_FingerDeleteSuccess.value(true, DPT_Switch);
+        KoACC_FingerDeleteSuccessId.value(location, Dpt(7, 1));
 
-        KoFIN_FingerDeleteSuccess.valueNoSend(location, Dpt(15, 1, 0)); // access identification code
-        KoFIN_FingerDeleteSuccess.valueNoSend(false, Dpt(15, 1, 1));    // detection error
-        KoFIN_FingerDeleteSuccess.valueNoSend(true, Dpt(15, 1, 2));     // permission accepted
-        KoFIN_FingerDeleteSuccess.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
-        KoFIN_FingerDeleteSuccess.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
-        KoFIN_FingerDeleteSuccess.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
+        KoACC_FingerDeleteSuccess.valueNoSend(location, Dpt(15, 1, 0)); // access identification code
+        KoACC_FingerDeleteSuccess.valueNoSend(false, Dpt(15, 1, 1));    // detection error
+        KoACC_FingerDeleteSuccess.valueNoSend(true, Dpt(15, 1, 2));     // permission accepted
+        KoACC_FingerDeleteSuccess.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
+        KoACC_FingerDeleteSuccess.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
+        KoACC_FingerDeleteSuccess.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
 
         if (sync)
             startSyncDelete(SyncType::FINGER, location);
@@ -704,15 +704,15 @@ bool AccessControl::deleteFinger(uint16_t location, bool sync)
     else
     {
         logInfoP("Deleting template failed.");
-        KoFIN_FingerDeleteSuccess.value(false, DPT_Switch);
-        KoFIN_FingerDeleteFailedId.value(location, Dpt(7, 1));
+        KoACC_FingerDeleteSuccess.value(false, DPT_Switch);
+        KoACC_FingerDeleteFailedId.value(location, Dpt(7, 1));
 
-        KoFIN_FingerDeleteSuccessData.valueNoSend(location, Dpt(15, 1, 0)); // access identification code
-        KoFIN_FingerDeleteSuccessData.valueNoSend(true, Dpt(15, 1, 1));     // detection error
-        KoFIN_FingerDeleteSuccessData.valueNoSend(false, Dpt(15, 1, 2));    // permission accepted
-        KoFIN_FingerDeleteSuccessData.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
-        KoFIN_FingerDeleteSuccessData.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
-        KoFIN_FingerDeleteSuccessData.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
+        KoACC_FingerDeleteSuccessData.valueNoSend(location, Dpt(15, 1, 0)); // access identification code
+        KoACC_FingerDeleteSuccessData.valueNoSend(true, Dpt(15, 1, 1));     // detection error
+        KoACC_FingerDeleteSuccessData.valueNoSend(false, Dpt(15, 1, 2));    // permission accepted
+        KoACC_FingerDeleteSuccessData.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
+        KoACC_FingerDeleteSuccessData.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
+        KoACC_FingerDeleteSuccessData.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
     }
 
     logIndentDown();
@@ -726,7 +726,7 @@ bool AccessControl::deleteNfc(uint16_t nfcId, bool sync)
     logInfoP("Delete request:");
     logIndentUp();
 
-    uint32_t storageOffset = FIN_CalcNfcStorageOffset(nfcId);
+    uint32_t storageOffset = ACC_CalcNfcStorageOffset(nfcId);
     logDebugP("storageOffset: %d", storageOffset);
 
     uint8_t emptyTest[10] = {};
@@ -739,7 +739,7 @@ bool AccessControl::deleteNfc(uint16_t nfcId, bool sync)
     {
         char personName[28] = {}; // empty
 
-        uint32_t storageOffset = FIN_CalcNfcStorageOffset(nfcId);
+        uint32_t storageOffset = ACC_CalcNfcStorageOffset(nfcId);
         _nfcStorage.write(storageOffset, *emptyTest, 10);
         _nfcStorage.write(storageOffset + 10, *personName, 28);
         _nfcStorage.commit();
@@ -747,30 +747,30 @@ bool AccessControl::deleteNfc(uint16_t nfcId, bool sync)
         if (sync)
             startSyncDelete(SyncType::NFC, nfcId);
         
-        KoFIN_NfcDeleteSuccess.value(true, DPT_Switch);
-        KoFIN_NfcDeleteSuccessId.value(nfcId, Dpt(7, 1));
+        KoACC_NfcDeleteSuccess.value(true, DPT_Switch);
+        KoACC_NfcDeleteSuccessId.value(nfcId, Dpt(7, 1));
 
-        KoFIN_NfcDeleteSuccess.valueNoSend(nfcId, Dpt(15, 1, 0)); // access identification code
-        KoFIN_NfcDeleteSuccess.valueNoSend(false, Dpt(15, 1, 1));    // detection error
-        KoFIN_NfcDeleteSuccess.valueNoSend(true, Dpt(15, 1, 2));     // permission accepted
-        KoFIN_NfcDeleteSuccess.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
-        KoFIN_NfcDeleteSuccess.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
-        KoFIN_NfcDeleteSuccess.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
+        KoACC_NfcDeleteSuccess.valueNoSend(nfcId, Dpt(15, 1, 0)); // access identification code
+        KoACC_NfcDeleteSuccess.valueNoSend(false, Dpt(15, 1, 1));    // detection error
+        KoACC_NfcDeleteSuccess.valueNoSend(true, Dpt(15, 1, 2));     // permission accepted
+        KoACC_NfcDeleteSuccess.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
+        KoACC_NfcDeleteSuccess.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
+        KoACC_NfcDeleteSuccess.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
     
         digitalWrite(LED_GREEN_PIN, HIGH);
         logInfoP("NFC tag with ID %d deleted.", nfcId);
     }
     else
     {
-        KoFIN_NfcDeleteSuccess.value(false, DPT_Switch);
-        KoFIN_NfcDeleteFailedId.value(nfcId, Dpt(7, 1));
+        KoACC_NfcDeleteSuccess.value(false, DPT_Switch);
+        KoACC_NfcDeleteFailedId.value(nfcId, Dpt(7, 1));
 
-        KoFIN_NfcDeleteSuccessData.valueNoSend(nfcId, Dpt(15, 1, 0)); // access identification code
-        KoFIN_NfcDeleteSuccessData.valueNoSend(true, Dpt(15, 1, 1));     // detection error
-        KoFIN_NfcDeleteSuccessData.valueNoSend(false, Dpt(15, 1, 2));    // permission accepted
-        KoFIN_NfcDeleteSuccessData.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
-        KoFIN_NfcDeleteSuccessData.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
-        KoFIN_NfcDeleteSuccessData.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
+        KoACC_NfcDeleteSuccessData.valueNoSend(nfcId, Dpt(15, 1, 0)); // access identification code
+        KoACC_NfcDeleteSuccessData.valueNoSend(true, Dpt(15, 1, 1));     // detection error
+        KoACC_NfcDeleteSuccessData.valueNoSend(false, Dpt(15, 1, 2));    // permission accepted
+        KoACC_NfcDeleteSuccessData.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
+        KoACC_NfcDeleteSuccessData.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
+        KoACC_NfcDeleteSuccessData.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
 
         digitalWrite(LED_RED_PIN, HIGH);
         logInfoP("NFC tag with ID %d not found.");
@@ -787,20 +787,20 @@ void AccessControl::processInputKo(GroupObject& ko)
     uint16_t asap = ko.asap();
     switch (asap)
     {
-        case FIN_KoLock:
+        case ACC_KoLock:
             processInputKoLock(ko);
             break;
-        case FIN_KoFingerLedRingColor:
-        case FIN_KoFingerLedRingControl:
-        case FIN_KoFingerLedRingSpeed:
-        case FIN_KoFingerLedRingCount:
+        case ACC_KoFingerLedRingColor:
+        case ACC_KoFingerLedRingControl:
+        case ACC_KoFingerLedRingSpeed:
+        case ACC_KoFingerLedRingCount:
             resetRingLed();
             break;
-        case FIN_KoTouchPcbLedRed:
-        case FIN_KoTouchPcbLedGreen:
+        case ACC_KoTouchPcbLedRed:
+        case ACC_KoTouchPcbLedGreen:
             processInputKoTouchPcbLed(ko);
             break;
-        case FIN_KoSync:
+        case ACC_KoSync:
             processSyncReceive(ko.valueRef());
             break;
     }
@@ -810,19 +810,19 @@ void AccessControl::processInputKo(GroupObject& ko)
 
     switch (asap)
     {
-        case FIN_KoFingerEnrollNext:
-        case FIN_KoFingerEnrollId:
-        case FIN_KoFingerEnrollData:
+        case ACC_KoFingerEnrollNext:
+        case ACC_KoFingerEnrollId:
+        case ACC_KoFingerEnrollData:
             processInputKoEnrollFinger(ko);
             break;
-        case FIN_KoNfcEnrollNext:
-        case FIN_KoNfcEnrollId:
-        case FIN_KoNfcEnrollData:
+        case ACC_KoNfcEnrollNext:
+        case ACC_KoNfcEnrollId:
+        case ACC_KoNfcEnrollData:
             processInputKoEnrollNfc(ko);
             break;
-        case FIN_KoFingerDeleteId:
-        case FIN_KoFingerDeleteData:
-            if (asap == FIN_KoFingerDeleteId)
+        case ACC_KoFingerDeleteId:
+        case ACC_KoFingerDeleteData:
+            if (asap == ACC_KoFingerDeleteId)
                 idReceived = ko.value(Dpt(7, 1));
             else
                 idReceived = ko.value(Dpt(15, 1, 0));
@@ -830,9 +830,9 @@ void AccessControl::processInputKo(GroupObject& ko)
             logInfoP("Location provided: %d", idReceived);
             deleteFinger(idReceived);
             break;
-        case FIN_KoNfcDeleteId:
-        case FIN_KoNfcDeleteData:
-            if (asap == FIN_KoNfcDeleteId)
+        case ACC_KoNfcDeleteId:
+        case ACC_KoNfcDeleteData:
+            if (asap == ACC_KoNfcDeleteId)
                 idReceived = ko.value(Dpt(7, 1));
             else
                 idReceived = ko.value(Dpt(15, 1, 0));
@@ -840,13 +840,13 @@ void AccessControl::processInputKo(GroupObject& ko)
             logInfoP("ID provided: %d", idReceived);
             deleteNfc(idReceived);
             break;
-        case FIN_KoFingerExternId:
+        case ACC_KoFingerExternId:
             idReceived = ko.value(Dpt(7, 1));
             logInfoP("FingerID received: %d", idReceived);
 
             processFingerScanSuccess(idReceived, true);
             break;
-        case FIN_KoNfcExternId:
+        case ACC_KoNfcExternId:
             idReceived = ko.value(Dpt(7, 1));
             logInfoP("NfcID received: %d", idReceived);
 
@@ -854,7 +854,7 @@ void AccessControl::processInputKo(GroupObject& ko)
             break;
         default:
         {
-            for (uint16_t i = 0; i < ParamFIN_VisibleActions; i++)
+            for (uint16_t i = 0; i < ParamACC_VisibleActions; i++)
                 _channels[i]->processInputKo(ko);
         }
     }
@@ -863,7 +863,7 @@ void AccessControl::processInputKo(GroupObject& ko)
 void AccessControl::processInputKoLock(GroupObject &ko)
 {
     isLocked = ko.value(DPT_Switch);
-    KoFIN_LockStatus.value(isLocked, DPT_Switch);
+    KoACC_LockStatus.value(isLocked, DPT_Switch);
     logInfoP("Locked: %d", isLocked);
 
     if (switchFingerprintPower(true))
@@ -879,9 +879,9 @@ void AccessControl::processInputKoTouchPcbLed(GroupObject &ko)
 {
     bool ledOn = ko.value(DPT_Switch);
     uint16_t asap = ko.asap();
-    if (asap == FIN_KoTouchPcbLedRed)
+    if (asap == ACC_KoTouchPcbLedRed)
         digitalWrite(LED_RED_PIN, ledOn ? HIGH : LOW);
-    else if (asap == FIN_KoTouchPcbLedGreen)
+    else if (asap == ACC_KoTouchPcbLedGreen)
         digitalWrite(LED_GREEN_PIN, ledOn ? HIGH : LOW);
 }
 
@@ -890,7 +890,7 @@ void AccessControl::processInputKoEnrollFinger(GroupObject &ko)
     bool success;
     uint16_t location;
     uint16_t asap = ko.asap();
-    if (asap == FIN_KoFingerEnrollNext)
+    if (asap == ACC_KoFingerEnrollNext)
     {
         success = switchFingerprintPower(true);
         if (success)
@@ -901,7 +901,7 @@ void AccessControl::processInputKoEnrollFinger(GroupObject &ko)
         else
             logErrorP("Failed getting next available location");
     }
-    else if (asap == FIN_KoFingerEnrollId)
+    else if (asap == ACC_KoFingerEnrollId)
     {
         success = true;
         location = ko.value(Dpt(7, 1));
@@ -926,7 +926,7 @@ void AccessControl::processInputKoEnrollNfc(GroupObject &ko)
     bool success;
     uint16_t nfcId = 0;
     uint16_t asap = ko.asap();
-    if (asap == FIN_KoNfcEnrollNext)
+    if (asap == ACC_KoNfcEnrollNext)
     {
         uint32_t storageOffset = 0;
         uint8_t tagUid[10] = {};
@@ -934,7 +934,7 @@ void AccessControl::processInputKoEnrollNfc(GroupObject &ko)
         
         for (uint16_t existentId = 0; existentId < MAX_NFCS; existentId++)
         {
-            storageOffset = FIN_CalcNfcStorageOffset(existentId);
+            storageOffset = ACC_CalcNfcStorageOffset(existentId);
             _nfcStorage.read(storageOffset, tagUid, 10);
             if (!memcmp(tagUid, emptyTest, 10))
             {
@@ -947,7 +947,7 @@ void AccessControl::processInputKoEnrollNfc(GroupObject &ko)
         if (success)
             logInfoP("Next ID: %u", nfcId);
     }
-    else if (asap == FIN_KoNfcEnrollId)
+    else if (asap == ACC_KoNfcEnrollId)
     {
         success = true;
         nfcId = ko.value(Dpt(7, 1));
@@ -969,7 +969,7 @@ void AccessControl::processInputKoEnrollNfc(GroupObject &ko)
 
 void AccessControl::startSyncDelete(SyncType syncType, uint16_t deleteId)
 {
-    if (!ParamFIN_EnableSync ||
+    if (!ParamACC_EnableSync ||
         syncReceiving)
         return;
 
@@ -997,29 +997,29 @@ void AccessControl::startSyncDelete(SyncType syncType, uint16_t deleteId)
             return;
     }
 
-    uint8_t *data = KoFIN_Sync.valueRef();
+    uint8_t *data = KoACC_Sync.valueRef();
     data[0] = 0;
     data[1] = syncTypeCode;
     data[2] = 0;
     data[3] = deleteId >> 8;
     data[4] = deleteId;
-    KoFIN_Sync.objectWritten();
+    KoACC_Sync.objectWritten();
 
     syncIgnoreTimer = delayTimerInit();
 }
 
 void AccessControl::startSyncSend(SyncType syncType, uint16_t syncId, bool loadModel)
 {
-    if (!ParamFIN_EnableSync ||
+    if (!ParamACC_EnableSync ||
         syncReceiving)
         return;
 
-    logInfoP("Sync-Send (syncType=%u): started: syncId=%u, loadModel=%u, syncDelay=%u", syncId, loadModel, ParamFIN_SyncDelay);
+    logInfoP("Sync-Send (syncType=%u): started: syncId=%u, loadModel=%u, syncDelay=%u", syncId, loadModel, ParamACC_SyncDelay);
 
     uint8_t syncTypeCode = 0;
     uint8_t syncSendBufferTemp[SYNC_BUFFER_SIZE];
     uint32_t storageOffset = 0;
-    uint8_t syncData[max(OPENKNX_FIN_FLASH_FINGER_DATA_SIZE, OPENKNX_FIN_FLASH_NFC_DATA_SIZE)] = {};
+    uint8_t syncData[max(OPENKNX_ACC_FLASH_FINGER_DATA_SIZE, OPENKNX_ACC_FLASH_NFC_DATA_SIZE)] = {};
     switch (syncType)
     {
         case SyncType::FINGER:
@@ -1053,16 +1053,16 @@ void AccessControl::startSyncSend(SyncType syncType, uint16_t syncId, bool loadM
     
             resetRingLed();
 
-            storageOffset = FIN_CalcFingerStorageOffset(syncId);
-            _fingerprintStorage.read(storageOffset, syncData, OPENKNX_FIN_FLASH_FINGER_DATA_SIZE);
-            memcpy(syncSendBufferTemp + TEMPLATE_SIZE, syncData, OPENKNX_FIN_FLASH_FINGER_DATA_SIZE);        
+            storageOffset = ACC_CalcFingerStorageOffset(syncId);
+            _fingerprintStorage.read(storageOffset, syncData, OPENKNX_ACC_FLASH_FINGER_DATA_SIZE);
+            memcpy(syncSendBufferTemp + TEMPLATE_SIZE, syncData, OPENKNX_ACC_FLASH_FINGER_DATA_SIZE);        
             break;
         case SyncType::NFC:
             syncTypeCode = 10;
 
-            storageOffset = FIN_CalcNfcStorageOffset(syncId);
-            _nfcStorage.read(storageOffset, syncData, OPENKNX_FIN_FLASH_NFC_DATA_SIZE);
-            memcpy(syncSendBufferTemp, syncData, OPENKNX_FIN_FLASH_NFC_DATA_SIZE);        
+            storageOffset = ACC_CalcNfcStorageOffset(syncId);
+            _nfcStorage.read(storageOffset, syncData, OPENKNX_ACC_FLASH_NFC_DATA_SIZE);
+            memcpy(syncSendBufferTemp, syncData, OPENKNX_ACC_FLASH_NFC_DATA_SIZE);        
             break;
         default:
             logErrorP("Sync-Send (syncType=%u): delete: Unsupported sync type", syncType);
@@ -1090,7 +1090,7 @@ void AccessControl::startSyncSend(SyncType syncType, uint16_t syncId, bool loadM
     - 9-10: 2 bytes: finger ID
     */
 
-    uint8_t *data = KoFIN_Sync.valueRef();
+    uint8_t *data = KoACC_Sync.valueRef();
     data[0] = 0;
     data[1] = syncTypeCode;
     data[2] = 0;
@@ -1102,7 +1102,7 @@ void AccessControl::startSyncSend(SyncType syncType, uint16_t syncId, bool loadM
     data[8] = checksum;
     data[9] = syncId >> 8;
     data[10] = syncId;
-    KoFIN_Sync.objectWritten();
+    KoACC_Sync.objectWritten();
 
     syncSendTimer = delayTimerInit();
     syncSendPacketSentCount = 1;
@@ -1112,18 +1112,18 @@ void AccessControl::startSyncSend(SyncType syncType, uint16_t syncId, bool loadM
 void AccessControl::processSyncSend()
 {
     if (!syncSending ||
-        !delayCheck(syncSendTimer, ParamFIN_SyncDelay))
+        !delayCheck(syncSendTimer, ParamACC_SyncDelay))
         return;
 
     syncSendTimer = delayTimerInit();
 
-    uint8_t *data = KoFIN_Sync.valueRef();
+    uint8_t *data = KoACC_Sync.valueRef();
     data[0] = syncSendPacketSentCount;
     uint8_t dataPacketNo = syncSendPacketSentCount - 1; // = sequence number - 1
     uint16_t dataOffset = dataPacketNo * SYNC_SEND_PACKET_DATA_LENGTH;
     uint8_t dataLength = dataOffset + SYNC_SEND_PACKET_DATA_LENGTH < syncSendBufferLength ? SYNC_SEND_PACKET_DATA_LENGTH : syncSendBufferLength - dataOffset;
     memcpy(data + 1, syncSendBuffer + dataOffset, dataLength);
-    KoFIN_Sync.objectWritten();
+    KoACC_Sync.objectWritten();
 
     syncSendPacketSentCount++;
     logDebugP("Sync-Send (%u/%u): data packet: dataPacketNo=%u, dataOffset=%u, dataLength=%u", syncSendPacketSentCount, syncSendPacketCount, dataPacketNo, dataOffset, dataLength);
@@ -1300,16 +1300,16 @@ void AccessControl::processSyncReceive(uint8_t* data)
                     return;
                 }
 
-                storageOffset = FIN_CalcFingerStorageOffset(syncReceiveSyncId);
-                _fingerprintStorage.write(storageOffset, syncSendBufferTemp + TEMPLATE_SIZE, OPENKNX_FIN_FLASH_FINGER_DATA_SIZE);
+                storageOffset = ACC_CalcFingerStorageOffset(syncReceiveSyncId);
+                _fingerprintStorage.write(storageOffset, syncSendBufferTemp + TEMPLATE_SIZE, OPENKNX_ACC_FLASH_FINGER_DATA_SIZE);
                 _fingerprintStorage.commit();
 
                 finger->setLed(Fingerprint::State::Success);
                 resetFingerLedTimer = delayTimerInit();
                 break;
             case SyncType::NFC:
-                storageOffset = FIN_CalcNfcStorageOffset(syncReceiveSyncId);
-                _nfcStorage.write(storageOffset, syncSendBufferTemp, OPENKNX_FIN_FLASH_NFC_DATA_SIZE);
+                storageOffset = ACC_CalcNfcStorageOffset(syncReceiveSyncId);
+                _nfcStorage.write(storageOffset, syncSendBufferTemp, OPENKNX_ACC_FLASH_NFC_DATA_SIZE);
                 _nfcStorage.commit();
                 break;
         }
@@ -1341,6 +1341,9 @@ bool AccessControl::processFunctionProperty(uint8_t objectIndex, uint8_t propert
         case 6:
             handleFunctionPropertyResetFingerScanner(data, resultData, resultLength);
             return true;
+        case 7:
+            handleFunctionPropertyWaitEnrollFingerFinished(data, resultData, resultLength);
+            return true;
         case 11:
             handleFunctionPropertySearchPersonByFingerId(data, resultData, resultLength);
             return true;
@@ -1364,6 +1367,9 @@ bool AccessControl::processFunctionProperty(uint8_t objectIndex, uint8_t propert
             return true;
         case 106:
             handleFunctionPropertyResetNfcScanner(data, resultData, resultLength);
+            return true;
+        case 107:
+            handleFunctionPropertyWaitEnrollNfcFinished(data, resultData, resultLength);
             return true;
         case 111:
             handleFunctionPropertySearchTagByNfcId(data, resultData, resultLength);
@@ -1396,7 +1402,7 @@ void AccessControl::handleFunctionPropertyEnrollFinger(uint8_t *data, uint8_t *r
     }
     logDebugP("personName: %s", personName);
 
-    uint32_t storageOffset = FIN_CalcFingerStorageOffset(fingerId);
+    uint32_t storageOffset = ACC_CalcFingerStorageOffset(fingerId);
     logDebugP("storageOffset: %d", storageOffset);
     _fingerprintStorage.writeByte(storageOffset, personFinger); // only 4 bits used
     _fingerprintStorage.write(storageOffset + 1, personName, 28);
@@ -1408,6 +1414,23 @@ void AccessControl::handleFunctionPropertyEnrollFinger(uint8_t *data, uint8_t *r
     resultData[0] = 0;
     resultLength = 1;
     logIndentDown();
+}
+
+void AccessControl::handleFunctionPropertyWaitEnrollFingerFinished(uint8_t *data, uint8_t *resultData, uint8_t &resultLength)
+{
+    logInfoP("Function property finger: Wait until Enroll request finished");
+    // logIndentUp();
+
+    // resultData[0] true, if enroll request is finished
+    resultData[0] = enrollRequestedFingerTimer == 0;
+    resultLength = 1;
+    if (enrollRequestedFingerTimer == 0)
+    {
+        // resultData[1] true, if enroll request was successful
+        resultData[1] = syncRequestedFingerTimer > 0;
+        resultLength = 2;
+    }
+    // logIndentDown();
 }
 
 void AccessControl::handleFunctionPropertyChangeFinger(uint8_t *data, uint8_t *resultData, uint8_t &resultLength)
@@ -1438,7 +1461,7 @@ void AccessControl::handleFunctionPropertyChangeFinger(uint8_t *data, uint8_t *r
             }
             logDebugP("personName: %s", personName);
 
-            uint32_t storageOffset = FIN_CalcFingerStorageOffset(fingerId);
+            uint32_t storageOffset = ACC_CalcFingerStorageOffset(fingerId);
             logDebugP("storageOffset: %d", storageOffset);
             _fingerprintStorage.writeByte(storageOffset, personFinger); // only 4 bits used
             if (!personNameEmpty)
@@ -1500,7 +1523,7 @@ void AccessControl::handleFunctionPropertyDeleteFinger(uint8_t *data, uint8_t *r
 
     char personName[28] = {}; // empty
 
-    uint32_t storageOffset = FIN_CalcFingerStorageOffset(fingerId);
+    uint32_t storageOffset = ACC_CalcFingerStorageOffset(fingerId);
     _fingerprintStorage.writeByte(storageOffset, 0); // "0" for not set
     _fingerprintStorage.write(storageOffset + 1, *personName, 28);
     _fingerprintStorage.commit();
@@ -1520,11 +1543,11 @@ void AccessControl::handleFunctionPropertyResetFingerScanner(uint8_t *data, uint
     bool success = false;
     if (switchFingerprintPower(true))
     {
-        char fingerData[OPENKNX_FIN_FLASH_FINGER_DATA_SIZE] = {}; // empty
+        char fingerData[OPENKNX_ACC_FLASH_FINGER_DATA_SIZE] = {}; // empty
         for (uint16_t i = 0; i < MAX_FINGERS; i++)
         {
-            uint32_t storageOffset = FIN_CalcFingerStorageOffset(i);
-            _fingerprintStorage.write(storageOffset, *fingerData, OPENKNX_FIN_FLASH_FINGER_DATA_SIZE);
+            uint32_t storageOffset = ACC_CalcFingerStorageOffset(i);
+            _fingerprintStorage.write(storageOffset, *fingerData, OPENKNX_ACC_FLASH_FINGER_DATA_SIZE);
         }
         _fingerprintStorage.commit();
 
@@ -1559,7 +1582,7 @@ void AccessControl::handleFunctionPropertySearchPersonByFingerId(uint8_t *data, 
 
         uint8_t personName[28] = {};
 
-        uint32_t storageOffset = FIN_CalcFingerStorageOffset(fingerId);
+        uint32_t storageOffset = ACC_CalcFingerStorageOffset(fingerId);
         logDebugP("storageOffset: %d", storageOffset);
         uint8_t personFinger = _fingerprintStorage.readByte(storageOffset);
         if (personFinger > 0)
@@ -1623,7 +1646,7 @@ void AccessControl::handleFunctionPropertySearchFingerIdByPerson(uint8_t *data, 
     logDebugP("searchPersonName: %s (length: %u)", searchPersonName, searchPersonNameLength);
     logDebugP("resultLength: %u", resultLength);
 
-    uint8_t recordLength = OPENKNX_FIN_FLASH_FINGER_DATA_SIZE + 2;
+    uint8_t recordLength = OPENKNX_ACC_FLASH_FINGER_DATA_SIZE + 2;
     uint8_t foundCount = 0;
     uint16_t foundTotalCount = 0;
     if (switchFingerprintPower(true))
@@ -1637,7 +1660,7 @@ void AccessControl::handleFunctionPropertySearchFingerIdByPerson(uint8_t *data, 
         for (uint16_t i = 0; i < templateCount; i++)
         {
             uint16_t fingerId = fingerIds[i];
-            storageOffset = FIN_CalcFingerStorageOffset(fingerId);
+            storageOffset = ACC_CalcFingerStorageOffset(fingerId);
             personFinger = _fingerprintStorage.readByte(storageOffset);
             if (searchPersonFinger > 0)
                 if (searchPersonFinger != personFinger)
@@ -1789,7 +1812,7 @@ void AccessControl::handleFunctionPropertyEnrollNfc(uint8_t *data, uint8_t *resu
 
     uint8_t tagUid[10] = {}; // empty
 
-    uint32_t storageOffset = FIN_CalcNfcStorageOffset(nfcId);
+    uint32_t storageOffset = ACC_CalcNfcStorageOffset(nfcId);
     logDebugP("storageOffset: %d", storageOffset);
     _nfcStorage.write(storageOffset, *tagUid, 10);
     _nfcStorage.write(storageOffset + 10, tagName, 28);
@@ -1802,6 +1825,30 @@ void AccessControl::handleFunctionPropertyEnrollNfc(uint8_t *data, uint8_t *resu
     resultLength = 1;
     logIndentDown();
 }
+
+void AccessControl::handleFunctionPropertyWaitEnrollNfcFinished(uint8_t *data, uint8_t *resultData, uint8_t &resultLength)
+{
+    logInfoP("Function property NFC: Wait until Enroll request finished");
+    // logIndentUp();
+
+    // resultData[0] true, if enroll request is finished
+    resultData[0] = enrollNfcStarted == 0;
+    resultLength = 1;
+    if (enrollNfcStarted == 0)
+    {
+        // resultData[1] true, if enroll request was successful
+        resultData[1] = (enrollNfcId > 0);
+        resultLength = 2;
+        if (enrollNfcId > 0)
+        {
+            // resultData[2-11] tag UID
+            _nfcStorage.read(ACC_CalcNfcStorageOffset(enrollNfcId), resultData + 2, 10);
+            resultLength = 12;
+        }
+    }
+    // logIndentDown();
+}
+
 
 void AccessControl::handleFunctionPropertyChangeNfc(uint8_t *data, uint8_t *resultData, uint8_t &resultLength)
 {
@@ -1840,7 +1887,7 @@ void AccessControl::handleFunctionPropertyChangeNfc(uint8_t *data, uint8_t *resu
     }
     logDebugP("tagName: %s", tagName);
 
-    uint32_t storageOffset = FIN_CalcNfcStorageOffset(nfcId);
+    uint32_t storageOffset = ACC_CalcNfcStorageOffset(nfcId);
     logDebugP("storageOffset: %d", storageOffset);
     if (!tagUidEmpty)
         _nfcStorage.write(storageOffset, tagUid, 10);
@@ -1892,11 +1939,11 @@ void AccessControl::handleFunctionPropertyResetNfcScanner(uint8_t *data, uint8_t
     logInfoP("Function property NFC: Reset scanner");
     logIndentUp();
 
-    char nfcData[OPENKNX_FIN_FLASH_NFC_DATA_SIZE] = {}; // empty
+    char nfcData[OPENKNX_ACC_FLASH_NFC_DATA_SIZE] = {}; // empty
     for (uint16_t i = 0; i < MAX_NFCS; i++)
     {
-        uint32_t storageOffset = FIN_CalcNfcStorageOffset(i);
-        _nfcStorage.write(storageOffset, *nfcData, OPENKNX_FIN_FLASH_NFC_DATA_SIZE);
+        uint32_t storageOffset = ACC_CalcNfcStorageOffset(i);
+        _nfcStorage.write(storageOffset, *nfcData, OPENKNX_ACC_FLASH_NFC_DATA_SIZE);
     }
     _nfcStorage.commit();
 
@@ -1916,7 +1963,7 @@ void AccessControl::handleFunctionPropertySearchTagByNfcId(uint8_t *data, uint8_
     uint16_t nfcId = (data[1] << 8) | data[2];
     logDebugP("nfcId: %d", nfcId);
 
-    uint32_t storageOffset = FIN_CalcNfcStorageOffset(nfcId);
+    uint32_t storageOffset = ACC_CalcNfcStorageOffset(nfcId);
     logDebugP("storageOffset: %d", storageOffset);
 
     uint8_t emptyTest[10] = {};
@@ -1984,7 +2031,7 @@ void AccessControl::handleFunctionPropertySearchNfcIdByTag(uint8_t *data, uint8_
     logDebugP("searchTagName: %s (length: %u)", searchTagName, searchTagNameLength);
     logDebugP("resultLength: %u", resultLength);
 
-    uint8_t recordLength = OPENKNX_FIN_FLASH_NFC_DATA_SIZE + 2;
+    uint8_t recordLength = OPENKNX_ACC_FLASH_NFC_DATA_SIZE + 2;
     uint8_t foundCount = 0;
     uint16_t foundTotalCount = 0;
 
@@ -1993,7 +2040,7 @@ void AccessControl::handleFunctionPropertySearchNfcIdByTag(uint8_t *data, uint8_
     uint8_t tagName[28] = {};
     for (uint16_t nfcId = 0; nfcId < MAX_NFCS; nfcId++)
     {
-        storageOffset = FIN_CalcNfcStorageOffset(nfcId);
+        storageOffset = ACC_CalcNfcStorageOffset(nfcId);
         _nfcStorage.read(storageOffset, tagUid, 10);
         if (!searchTagUidEmpty)
         {
@@ -2074,7 +2121,7 @@ void AccessControl::savePower()
 
 bool AccessControl::restorePower()
 {
-    if (ParamFIN_ScanMode == 1)
+    if (ParamACC_ScanMode == 1)
         switchFingerprintPower(true);
 
     return true;
@@ -2084,7 +2131,7 @@ bool AccessControl::processCommand(const std::string cmd, bool diagnoseKo)
 {
     bool result = false;
 
-    if (cmd.substr(0, 3) != "fin" || cmd.length() < 5)
+    if (cmd.substr(0, 3) != "ACC" || cmd.length() < 5)
         return result;
 
     if (cmd.length() == 5 && cmd.substr(4, 1) == "h")

@@ -1,4 +1,4 @@
-#include "FingerprintModule.h"
+#include "AccessControl.h"
 
 ActionChannel::ActionChannel(uint8_t index, Fingerprint *finger)
 {
@@ -13,12 +13,12 @@ const std::string ActionChannel::name()
 
 void ActionChannel::loop()
 {
-    if (_actionCallResetTime > 0 && delayCheck(_actionCallResetTime, ParamFIN_AuthDelayTimeMS))
+    if (_actionCallResetTime > 0 && delayCheck(_actionCallResetTime, ParamACC_AuthDelayTimeMS))
         resetActionCall();
 
-    if (_stairLightTime > 0 && delayCheck(_stairLightTime, ParamFIN_ActDelayTimeMS))
+    if (_stairLightTime > 0 && delayCheck(_stairLightTime, ParamACC_ActDelayTimeMS))
     {
-        KoFIN_ActSwitch.value(false, DPT_Switch);
+        KoACC_ActSwitch.value(false, DPT_Switch);
         _stairLightTime = 0;
     }
     processReadRequests();
@@ -26,10 +26,10 @@ void ActionChannel::loop()
 
 void ActionChannel::processInputKo(GroupObject &ko)
 {
-    switch (FIN_KoCalcIndex(ko.asap()))
+    switch (ACC_KoCalcIndex(ko.asap()))
     {
-        case FIN_KoActCallLock:
-            if (ParamFIN_ActAuthenticate && ko.value(DPT_Switch))
+        case ACC_KoActCallLock:
+            if (ParamACC_ActAuthenticate && ko.value(DPT_Switch))
             {
                 _authenticateActive = true;
                 _actionCallResetTime = delayTimerInit();
@@ -45,32 +45,32 @@ bool ActionChannel::processScan(uint16_t location)
     // authentication is active and the action is without auth-flag => skip processing
     // authentication is inaction and the action has the auth-flag => skip processing
     // authentication is inaction and the action is locked
-    if (_authenticateActive != ParamFIN_ActAuthenticate ||
-        !ParamFIN_ActAuthenticate && FIN_KoActCallLock)
+    if (_authenticateActive != ParamACC_ActAuthenticate ||
+        !ParamACC_ActAuthenticate && ACC_KoActCallLock)
         return false;
 
-    if (!ParamFIN_ActAuthenticate || KoFIN_ActCallLock.value(DPT_Switch))
+    if (!ParamACC_ActAuthenticate || KoACC_ActCallLock.value(DPT_Switch))
     {
-        switch (ParamFIN_ActActionType)
+        switch (ParamACC_ActActionType)
         {
             case 0: // action deactivated
                 break;
             case 1: // switch
-                KoFIN_ActSwitch.value(ParamFIN_ActOnOff, DPT_Switch);
+                KoACC_ActSwitch.value(ParamACC_ActOnOff, DPT_Switch);
                 break;
             case 2: // toggle
-                KoFIN_ActSwitch.value(!KoFIN_ActState.value(DPT_Switch), DPT_Switch);
-                KoFIN_ActState.value(KoFIN_ActSwitch.value(DPT_Switch), DPT_Switch);
+                KoACC_ActSwitch.value(!KoACC_ActState.value(DPT_Switch), DPT_Switch);
+                KoACC_ActState.value(KoACC_ActSwitch.value(DPT_Switch), DPT_Switch);
                 break;
             case 3: // stair light
-                KoFIN_ActSwitch.value(true, DPT_Switch);
+                KoACC_ActSwitch.value(true, DPT_Switch);
                 _stairLightTime = delayTimerInit();
                 break;
         }
 
-        if (KoFIN_ActCallLock.value(DPT_Switch))
+        if (KoACC_ActCallLock.value(DPT_Switch))
         {
-            KoFIN_ActCallLock.value(false, DPT_Switch);
+            KoACC_ActCallLock.value(false, DPT_Switch);
             _actionCallResetTime = 0;
             _authenticateActive = false;
         }
@@ -87,8 +87,8 @@ void ActionChannel::processReadRequests()
     if (_readRequestSent) return;
 
     // is there a state field to read?
-    if (ParamFIN_ActActionType == 2) // toggle
-        _readRequestSent = openknxFingerprintModule.sendReadRequest(KoFIN_ActState);
+    if (ParamACC_ActActionType == 2) // toggle
+        _readRequestSent = openknxAccessControl.sendReadRequest(KoACC_ActState);
     else
         _readRequestSent = true;
 }
@@ -99,7 +99,7 @@ void ActionChannel::resetActionCall()
     if (!_authenticateActive)
         return;
 
-    KoFIN_ActCallLock.value(false, DPT_Switch);
+    KoACC_ActCallLock.value(false, DPT_Switch);
     _finger->setLed(Fingerprint::State::None);
     _authenticateActive = false;
 }

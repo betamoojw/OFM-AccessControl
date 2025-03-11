@@ -1,12 +1,12 @@
 
-function FIN_clearSearchResults(input, output, context) {
+function ACC_clearSearchResults(input, output, context) {
     output.SearchResults = 0;
     output.SearchResultsDisplay = 0;
 }
 
-function FIN_dummy(input, output, context) { }
+function ACC_dummy(input, output, context) { }
 
-function FIN_sort(device, online, progress, context) {
+function ACC_sort(device, online, progress, context) {
     var parFingerActionCount = device.getParameterByName("FINACT_FingerActionCount");
     // first get rid of zero lines
     var endIndex = parFingerActionCount.value;
@@ -63,14 +63,14 @@ function FIN_sort(device, online, progress, context) {
     } while (continueSort);
 }
 
-function FIN_assignFingerId(device, online, progress, context) {
+function ACC_assignFingerId(device, online, progress, context) {
     var parFingerId = device.getParameterByName("FINACT_FingerId");
     var parFingerActionLine = device.getParameterByName("FINACT_FingerActionLine");
     var parTargetId = device.getParameterByName("FINACT_Fa" + parFingerActionLine.value + "FingerId");
     parTargetId.value = parFingerId.value;
 }
 
-function FIN_checkFingerIdRange(input, changed, prevValue, context) {
+function ACC_checkFingerIdRange(input, changed, prevValue, context) {
     var limit = [149, 199, 1499];
     if (input.FingerID > limit[input.Scanner]) {
         if (changed == "FingerID") {
@@ -82,11 +82,11 @@ function FIN_checkFingerIdRange(input, changed, prevValue, context) {
     return true;
 }
 
-function FIN_checkFingerAction(device, online, progress, context) {
+function ACC_checkFingerAction(device, online, progress, context) {
     var parActionId = device.getParameterByName("FINACT_Fa" + context.Channel + "ActionId");
     var parFingerId = device.getParameterByName("FINACT_Fa" + context.Channel + "FingerId");
     var parFingerActionInfo = device.getParameterByName("FINACT_Fa" + context.Channel + "FingerActionInfo");
-    var parVisibleActions = device.getParameterByName("FIN_VisibleActions");
+    var parVisibleActions = device.getParameterByName("ACC_VisibleActions");
 
     if (parActionId.value <= parVisibleActions.value) {
 
@@ -158,14 +158,14 @@ function FIN_checkFingerAction(device, online, progress, context) {
             personText = "Unbekannter Finger";
         }
 
-        var parActionDescription = device.getParameterByName("FIN_Act" + parActionId.value + "Description");
+        var parActionDescription = device.getParameterByName("ACC_Act" + parActionId.value + "Description");
         parFingerActionInfo.value = (parActionDescription.value + "; " + personText).substring(0, 80);
     } else {
         parFingerActionInfo.value = "Aktion ist nicht definiert, Finger wurde nicht ermittelt";
     }
 }
 
-function FIN_searchFingerId(device, online, progress, context) {
+function ACC_searchFingerId(device, online, progress, context) {
     var parPersonName = device.getParameterByName("FINACT_PersonName");
     var parPersonFinger = device.getParameterByName("FINACT_PersonFinger");
     var parFingerId = device.getParameterByName("FINACT_FingerId");
@@ -261,7 +261,7 @@ function FIN_searchFingerId(device, online, progress, context) {
     }
 }    
 
-function FIN_searchFingerName(device, online, progress, context) {
+function ACC_searchFingerName(device, online, progress, context) {
     var parPersonName = device.getParameterByName("FINACT_PersonName");
     var parPersonFinger = device.getParameterByName("FINACT_PersonFinger");
     var parFingerId = device.getParameterByName("FINACT_FingerId");
@@ -309,10 +309,16 @@ function FIN_searchFingerName(device, online, progress, context) {
     parFingerId.value = fingerId;
 }
 
-function FIN_enrollFinger(device, online, progress, context) {
-    var parFingerId = device.getParameterByName("FIN_EnrollFingerId");
-    var parPersonFinger = device.getParameterByName("FIN_EnrollPersonFinger");
-    var parPersonName = device.getParameterByName("FIN_EnrollPersonName");
+function ACC_sleep(milliseconds) {
+    var currentTime = new Date().getTime();
+    while (currentTime + milliseconds >= new Date().getTime()) {
+    }
+}
+
+function ACC_enrollFinger(device, online, progress, context) {
+    var parFingerId = device.getParameterByName("ACC_EnrollFingerId");
+    var parPersonFinger = device.getParameterByName("ACC_EnrollPersonFinger");
+    var parPersonName = device.getParameterByName("ACC_EnrollPersonName");
 
     progress.setText("Fingerprint: Finger ID " + parFingerId.value + " anlernen...");
     online.connect();
@@ -334,17 +340,54 @@ function FIN_enrollFinger(device, online, progress, context) {
 
     var resp = online.invokeFunctionProperty(160, 3, data);
     if (resp[0] != 0) {
-        throw new Error("Fingerprint: Es ist ein unbekannter Fehler aufgetreten!");
+        throw new Error("Fingerprint: Finger anlernen konnte nicht gestartet werden!");
     }
 
+
+    // we wait until enrol finger is finished
+    var lCancelled = false;
+    if (!lCancelled) {
+        var lText = "Fingerprint: Finger ID " + parFingerId.value + " anlernen gestartet.";
+        progress.setText(lText);
+        
+        var data = [7]; // command wait for enroll request finished
+        data = data.concat(0); // zero-terminated
+        
+        var resp = online.invokeFunctionProperty(160, 3, data);
+        
+        var lPercent = 0;
+        if (resp[0] == 0) {
+            // poll to check if enroll is finished
+            while (resp[0] == 0 && !lCancelled) {
+                data = [7];
+                data = data.concat(0); // zero-terminated string
+                lPercent += (90.0-lPercent)/40.0;
+                if (lPercent <= 100) progress.setProgress(lPercent);
+                ACC_sleep(1000);
+                resp = online.invokeFunctionProperty(160, 3, data);
+                // lCancelled = progress.isCanceled();
+            }
+            if (resp[0] == 1 && !lCancelled) {
+                if (resp[1] == 0) {
+                    throw new Error("Fingerprint: Finger ID " + parFingerId.value + " anlernen fehlgeschlagen!");
+                } else {
+                    progress.setText("Fingerprint: Finger ID " + parFingerId.value + " anlernen erfolgreich.");
+                }
+            }
+        }
+    }
+    if (lCancelled) {
+        progress.setText("Fingerprint: Anlernen vom Benutzer abgebrochen");
+    }
+    progress.setProgress(100);
+    ACC_sleep(100);
     online.disconnect();
-    progress.setText("Fingerprint: Finger ID " + parFingerId.value + " anlernen gestartet.");
 }
 
-function FIN_changeFinger(device, online, progress, context) {
-    var parFingerId = device.getParameterByName("FIN_EnrollFingerId");
-    var parPersonFinger = device.getParameterByName("FIN_EnrollPersonFinger");
-    var parPersonName = device.getParameterByName("FIN_EnrollPersonName");
+function ACC_changeFinger(device, online, progress, context) {
+    var parFingerId = device.getParameterByName("ACC_EnrollFingerId");
+    var parPersonFinger = device.getParameterByName("ACC_EnrollPersonFinger");
+    var parPersonName = device.getParameterByName("ACC_EnrollPersonName");
 
     progress.setText("Fingerprint: Finger ID " + parFingerId.value + " ändern...");
     online.connect();
@@ -377,8 +420,8 @@ function FIN_changeFinger(device, online, progress, context) {
     progress.setText("Fingerprint: Finger ID " + parFingerId.value + " geändert.");
 }
 
-function FIN_syncFinger(device, online, progress, context) {
-    var parFingerId = device.getParameterByName("FIN_SyncFingerId");
+function ACC_syncFinger(device, online, progress, context) {
+    var parFingerId = device.getParameterByName("ACC_SyncFingerId");
 
     progress.setText("Fingerprint: Finger ID " + parFingerId.value + " synchronisieren...");
     online.connect();
@@ -399,8 +442,8 @@ function FIN_syncFinger(device, online, progress, context) {
     progress.setText("Fingerprint: Finger ID " + parFingerId.value + " Synchronisierung gestartet.");
 }
 
-function FIN_deleteFinger(device, online, progress, context) {
-    var parFingerId = device.getParameterByName("FIN_DeleteFingerId");
+function ACC_deleteFinger(device, online, progress, context) {
+    var parFingerId = device.getParameterByName("ACC_DeleteFingerId");
 
     progress.setText("Fingerprint: Finger ID " + parFingerId.value + " löschen...");
     online.connect();
@@ -421,7 +464,7 @@ function FIN_deleteFinger(device, online, progress, context) {
     progress.setText("Fingerprint: Finger ID " + parFingerId.value + " gelöscht.");
 }
 
-function FIN_resetFingerScanner(device, online, progress, context) {
+function ACC_resetFingerScanner(device, online, progress, context) {
     progress.setText("Fingerprint: Alle Finger löschen...");
     online.connect();
 
@@ -436,10 +479,10 @@ function FIN_resetFingerScanner(device, online, progress, context) {
     progress.setText("Fingerprint: Alle Finger gelöscht.");
 }
 
-function FIN_setFingerPassword(device, online, progress, context) {
-    var parPasswordOption = device.getParameterByName("FIN_PasswordOption");
-    var parPasswordNew = device.getParameterByName("FIN_PasswordNew");
-    var parPasswordOld = device.getParameterByName("FIN_PasswordOld");
+function ACC_setFingerPassword(device, online, progress, context) {
+    var parPasswordOption = device.getParameterByName("ACC_PasswordOption");
+    var parPasswordNew = device.getParameterByName("ACC_PasswordNew");
+    var parPasswordOld = device.getParameterByName("ACC_PasswordOld");
     
     progress.setText("Fingerprint: " + parPasswordOption.value == 1 ? "Passwort festsetzen..." : "Passwort ändern...");
     online.connect();
@@ -475,18 +518,18 @@ function FIN_setFingerPassword(device, online, progress, context) {
         }
     }
 
-    var parPasswordAlreadySet = device.getParameterByName("FIN_PasswardAlreadySet");
+    var parPasswordAlreadySet = device.getParameterByName("ACC_PasswardAlreadySet");
     parPasswordAlreadySet.value = parPasswordNew.value == "0" ? 0 : 1;
 
     online.disconnect();
     progress.setText("Fingerprint: " + parPasswordOption.value == 1 ? "Passwort festgesetzt." : "Passwort geändert.");
 }
 
-function FIN_checkNfcAction(device, online, progress, context) {
+function ACC_checkNfcAction(device, online, progress, context) {
     var parActionId = device.getParameterByName("NFCACT_Fa" + context.Channel + "ActionId");
     var parNfcId = device.getParameterByName("NFCACT_Fa" + context.Channel + "NfcId");
     var parNfcActionInfo = device.getParameterByName("NFCACT_Fa" + context.Channel + "NfcActionInfo");
-    var parVisibleActions = device.getParameterByName("FIN_VisibleActions");
+    var parVisibleActions = device.getParameterByName("ACC_VisibleActions");
 
     if (parActionId.value <= parVisibleActions.value) {
 
@@ -516,14 +559,14 @@ function FIN_checkNfcAction(device, online, progress, context) {
             }
         }
 
-        var parActionDescription = device.getParameterByName("FIN_Act" + parActionId.value + "Description");
+        var parActionDescription = device.getParameterByName("ACC_Act" + parActionId.value + "Description");
         parNfcActionInfo.value = (parActionDescription.value + "; " + nfcName).substring(0, 80);
     } else {
         parNfcActionInfo.value = "Aktion ist nicht definiert, NFC wurde nicht ermittelt";
     }
 }
 
-function FIN_searchNfcId(device, online, progress, context) {
+function ACC_searchNfcId(device, online, progress, context) {
     var parNfcName = device.getParameterByName("NFCACT_NfcName");
     //var parNfcTagUid = device.getParameterByName("NFCACT_NfcTagUid");
     var parNfcId = device.getParameterByName("NFCACT_NfcId");
@@ -605,7 +648,7 @@ function FIN_searchNfcId(device, online, progress, context) {
     }
 }
 
-function FIN_searchNfcName(device, online, progress, context) {
+function ACC_searchNfcName(device, online, progress, context) {
     var parNfcName = device.getParameterByName("NFCACT_NfcName");
     //var parNfcTagUid = device.getParameterByName("NFCACT_NfcTagUid");
     var parNfcId = device.getParameterByName("NFCACT_NfcId");
@@ -653,11 +696,13 @@ function FIN_searchNfcName(device, online, progress, context) {
     parNfcId.value = fingerId;
 }
 
-function FIN_enrollNfc(device, online, progress, context) {
-    var parNfcId = device.getParameterByName("FIN_EnrollNfcId");
-    var parTagName = device.getParameterByName("FIN_EnrollTagName");
+var ACC_HexDigits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'];
 
-    progress.setText("NFC: NFC ID " + parNfcId.value + " anlernen...");
+function ACC_enrollNfc(device, online, progress, context) {
+    var parNfcId = device.getParameterByName("ACC_EnrollNfcId");
+    var parTagName = device.getParameterByName("ACC_EnrollTagName");
+
+    progress.setText("NFC: Tag ID " + parNfcId.value + " anlernen...");
     online.connect();
 
     var data = [101]; // internal function ID
@@ -674,17 +719,60 @@ function FIN_enrollNfc(device, online, progress, context) {
 
     var resp = online.invokeFunctionProperty(160, 3, data);
     if (resp[0] != 0) {
-        throw new Error("NFC: Es ist ein unbekannter Fehler aufgetreten!");
+        throw new Error("NFC: Tag anlernen konnte nicht gestartet werden!");
     }
 
+    // we wait until enrol finger is finished
+    var lCancelled = false;
+    if (!lCancelled) {
+        var lText = "NFC: Tag ID " + parNfcId.value + " anlernen gestartet.";
+        progress.setText(lText);
+        
+        var data = [107]; // command wait for enroll request finished
+        data = data.concat(0); // zero-terminated
+        
+        var resp = online.invokeFunctionProperty(160, 3, data);
+        
+        var lPercent = 0;
+        if (resp[0] == 0) {
+            // poll to check if enroll is finished
+            while (resp[0] == 0 && !lCancelled) {
+                data = [107];
+                data = data.concat(0); // zero-terminated string
+                lPercent += (90.0-lPercent)/40.0;
+                if (lPercent <= 100) progress.setProgress(lPercent);
+                ACC_sleep(1000);
+                resp = online.invokeFunctionProperty(160, 3, data);
+                // lCancelled = progress.isCanceled();
+            }
+            if (resp[0] == 1 && !lCancelled) {
+                if (resp[1] == 0) {
+                    throw new Error("NFC: Tag ID " + parNfcId.value + " anlernen fehlgeschlagen!");
+                } else {
+                    progress.setText("NFC: Tag ID " + parNfcId.value + " anlernen erfolgreich.");
+                    var UID = "";
+                    for (var i = 2; i < 12 && resp[i] > 0; i++) {
+                        UID += ACC_HexDigits[resp[i]>>4] + ACC_HexDigits[resp[i]&0x0F];
+                    }
+                    var parNfcTagUid = device.getParameterByName("ACC_EnrollNfcKey");
+                    parNfcTagUid.value = UID;
+                    info("AccessControl - UID: " + UID);
+                }
+            }
+        }
+    }
+    if (lCancelled) {
+        progress.setText("NFC: Anlernen vom Benutzer abgebrochen");
+    }
+    progress.setProgress(100);
+    ACC_sleep(100);
     online.disconnect();
-    progress.setText("NFC: NFC ID " + parNfcId.value + " anlernen gestartet.");
 }
 
-function FIN_changeNfc(device, online, progress, context) {
-    var parNfcId = device.getParameterByName("FIN_EnrollNfcId");
-    var parTagUid = device.getParameterByName("FIN_EnrollNfcKey");
-    var parTagName = device.getParameterByName("FIN_EnrollTagName");
+function ACC_changeNfc(device, online, progress, context) {
+    var parNfcId = device.getParameterByName("ACC_EnrollNfcId");
+    var parTagUid = device.getParameterByName("ACC_EnrollNfcKey");
+    var parTagName = device.getParameterByName("ACC_EnrollTagName");
 
     progress.setText("NFC: NFC ID " + parNfcId.value + " ändern...");
     online.connect();
@@ -723,8 +811,8 @@ function FIN_changeNfc(device, online, progress, context) {
     progress.setText("NFC: NFC ID " + parNfcId.value + " geändert.");
 }
 
-function FIN_syncNfc(device, online, progress, context) {
-    var parNfcId = device.getParameterByName("FIN_SyncNfcId");
+function ACC_syncNfc(device, online, progress, context) {
+    var parNfcId = device.getParameterByName("ACC_SyncNfcId");
 
     progress.setText("NFC: NFC ID " + parNfcId.value + " synchronisieren...");
     online.connect();
@@ -745,8 +833,8 @@ function FIN_syncNfc(device, online, progress, context) {
     progress.setText("NFC: NFC ID " + parNfcId.value + " Synchronisierung gestartet.");
 }
 
-function FIN_deleteNfc(device, online, progress, context) {
-    var parNfcId = device.getParameterByName("FIN_DeleteNfcId");
+function ACC_deleteNfc(device, online, progress, context) {
+    var parNfcId = device.getParameterByName("ACC_DeleteNfcId");
 
     progress.setText("NFC: NFC ID " + parNfcId.value + " löschen...");
     online.connect();
@@ -767,7 +855,7 @@ function FIN_deleteNfc(device, online, progress, context) {
     progress.setText("NFC: NFC ID " + parNfcId.value + " gelöscht.");
 }
 
-function FIN_resetNfcScanner(device, online, progress, context) {
+function ACC_resetNfcScanner(device, online, progress, context) {
     progress.setText("NFC: Alle NFC-Tags löschen...");
     online.connect();
 

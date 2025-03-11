@@ -4,7 +4,7 @@
   <ManufacturerData>
     <Manufacturer RefId="M-00FA">
       <ApplicationPrograms>
-        <ApplicationProgram Id="%AID%" ApplicationNumber="200" ApplicationVersion="1" ProgramType="ApplicationProgram" MaskVersion="MV-07B0" Name="FIN" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de" DynamicTableManagement="false" Linkable="false" MinEtsVersion="4.0">
+        <ApplicationProgram Id="%AID%" ApplicationNumber="200" ApplicationVersion="1" ProgramType="ApplicationProgram" MaskVersion="MV-07B0" Name="ACC" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de" DynamicTableManagement="false" Linkable="false" MinEtsVersion="4.0">
           <Static>
             <ParameterTypes>
               <!-- Number of channels (module specific) -->
@@ -44,7 +44,7 @@
 
             </ParameterRefs>
             <ParameterCalculations>
-              <ParameterCalculation Id="%AID%_PC-%T%900002" Language="JavaScript" Name="ClearSearchResult" RLTransformationFunc="FIN_clearSearchResults" LRTransformationFunc="FIN_dummy">
+              <ParameterCalculation Id="%AID%_PC-%T%900002" Language="JavaScript" Name="ClearSearchResult" RLTransformationFunc="ACC_clearSearchResults" LRTransformationFunc="ACC_dummy">
                 <LParameters>
                   <ParameterRefRef RefId="%AID%_P-%T%900007_R-%T%90000701" AliasName="SearchResults" />
                   <ParameterRefRef RefId="%AID%_P-%T%900009_R-%T%90000901" AliasName="SearchResultsDisplay" />
@@ -83,12 +83,12 @@
                       <ParameterSeparator Id="%AID%_PS-nnn" Text="  Finger/Suchwort" Cell="1,1" />
                       <ParameterRefRef RefId="%AID%_P-%T%900004_R-%T%90000401" Cell="1,2" />
                       <ParameterRefRef RefId="%AID%_P-%T%900003_R-%T%90000301" Cell="1,3" />
-                      <Button Id="%AID%_B-%T%910001" Text="Finger-ID suchen" EventHandler="FIN_searchFingerId" EventHandlerOnline="ConnectionOriented" Cell="1,4" />
+                      <Button Id="%AID%_B-%T%910001" Text="Finger-ID suchen" EventHandler="ACC_searchFingerId" EventHandlerOnline="ConnectionOriented" Cell="1,4" />
                       <ParameterSeparator Id="%AID%_PS-nnn" Text="  Finger-ID" Cell="2,1" />
                       <ParameterRefRef RefId="%AID%_P-%T%900005_R-%T%90000501" Cell="2,2" />
-                      <Button Id="%AID%_B-%T%910002" Text="Person suchen" EventHandler="FIN_searchFingerName" EventHandlerOnline="ConnectionOriented" Cell="2,4" />
+                      <Button Id="%AID%_B-%T%910002" Text="Person suchen" EventHandler="ACC_searchFingerName" EventHandlerOnline="ConnectionOriented" Cell="2,4" />
 
-                      <!-- <Button Id="%AID%_B-%T%900003" Text="zuweisen" Cell="1,5" EventHandler="FIN_assignFingerId" /> -->
+                      <!-- <Button Id="%AID%_B-%T%900003" Text="zuweisen" Cell="1,5" EventHandler="ACC_assignFingerId" /> -->
                     </ParameterBlock>
 
                     <!-- No search results available -->
@@ -147,7 +147,7 @@
                       <ParameterSeparator Id="%AID%_PS-nnn" Text="Nr." UIHint="Headline" Cell="1,1" />
                       <ParameterSeparator Id="%AID%_PS-nnn" Text="Aktion" UIHint="Headline" Cell="1,2" />
                       <ParameterSeparator Id="%AID%_PS-nnn" Text="Finger" UIHint="Headline" Cell="1,3" />
-                      <Button Id="%AID%_B-%T%900004" Text="Sortieren" Cell="1,4" EventHandler="FIN_sort" />
+                      <Button Id="%AID%_B-%T%900004" Text="Sortieren" Cell="1,4" EventHandler="ACC_sort" />
                       <ParameterSeparator Id="%AID%_PS-nnn" Text="Information" UIHint="Headline" Cell="1,5" />
                     </ParameterBlock>
                     <op:include href="FingerAction.templ.xml" xpath="//Dynamic/ChannelIndependentBlock/*" type="template" prefix="FINACT" IsInner="true" />

@@ -30,19 +30,19 @@
 #define SHUTDOWN_SENSOR_DELAY 3000
 
 #define MAX_FINGERS 1500
-#define OPENKNX_FIN_FLASH_FINGER_MAGIC_WORD 2912744758
-#define OPENKNX_FIN_FLASH_FINGER_DATA_SIZE 29 // 1 byte: which finger, 28 bytes: person name
-#define FIN_CalcFingerStorageOffset(fingerId) fingerId * OPENKNX_FIN_FLASH_FINGER_DATA_SIZE + 4096 + 1 // first byte free for finger info storage format version
+#define OPENKNX_ACC_FLASH_FINGER_MAGIC_WORD 2912744758
+#define OPENKNX_ACC_FLASH_FINGER_DATA_SIZE 29 // 1 byte: which finger, 28 bytes: person name
+#define ACC_CalcFingerStorageOffset(fingerId) fingerId * OPENKNX_ACC_FLASH_FINGER_DATA_SIZE + 4096 + 1 // first byte free for finger info storage format version
 #define FLASH_FINGER_SCANNER_PASSWORD_OFFSET 5
 
 #define MAX_NFCS 1500
-#define OPENKNX_FIN_FLASH_NFC_MAGIC_WORD 1983749238
-#define OPENKNX_FIN_FLASH_NFC_DATA_SIZE 38 // 10 byte: NFC tag UID, 28 bytes: person name
-#define FIN_CalcNfcStorageOffset(nfcId) nfcId * OPENKNX_FIN_FLASH_NFC_DATA_SIZE + 4096 + 1 // first byte free for NFC info storage format version
+#define OPENKNX_ACC_FLASH_NFC_MAGIC_WORD 1983749238
+#define OPENKNX_ACC_FLASH_NFC_DATA_SIZE 38 // 10 byte: NFC tag UID, 28 bytes: person name
+#define ACC_CalcNfcStorageOffset(nfcId) nfcId * OPENKNX_ACC_FLASH_NFC_DATA_SIZE + 4096 + 1 // first byte free for NFC info storage format version
 #define NFC_ENROLL_TIMEOUT 10000
 #define NFC_ENROLL_LED_BLINK_INTERVAL 250
 
-#define SYNC_BUFFER_SIZE TEMPLATE_SIZE + OPENKNX_FIN_FLASH_FINGER_DATA_SIZE
+#define SYNC_BUFFER_SIZE TEMPLATE_SIZE + OPENKNX_ACC_FLASH_FINGER_DATA_SIZE
 #define SYNC_SEND_PACKET_DATA_LENGTH 13
 #define SYNC_AFTER_ENROLL_DELAY 500
 #define SYNC_IGNORE_DELAY 500
@@ -111,6 +111,7 @@ class AccessControl : public OpenKNX::Module
     void processInputKoEnrollFinger(GroupObject &ko);
     void processInputKoEnrollNfc(GroupObject &ko);
     void handleFunctionPropertyEnrollFinger(uint8_t *data, uint8_t *resultData, uint8_t &resultLength);
+    void handleFunctionPropertyWaitEnrollFingerFinished(uint8_t *data, uint8_t *resultData, uint8_t &resultLength);
     void handleFunctionPropertyChangeFinger(uint8_t *data, uint8_t *resultData, uint8_t &resultLength);
     void handleFunctionPropertySyncFinger(uint8_t *data, uint8_t *resultData, uint8_t &resultLength);
     void handleFunctionPropertyDeleteFinger(uint8_t *data, uint8_t *resultData, uint8_t &resultLength);
@@ -119,6 +120,7 @@ class AccessControl : public OpenKNX::Module
     void handleFunctionPropertySearchFingerIdByPerson(uint8_t *data, uint8_t *resultData, uint8_t &resultLength);
     void handleFunctionPropertySetFingerPassword(uint8_t *data, uint8_t *resultData, uint8_t &resultLength);
     void handleFunctionPropertyEnrollNfc(uint8_t *data, uint8_t *resultData, uint8_t &resultLength);
+    void handleFunctionPropertyWaitEnrollNfcFinished(uint8_t *data, uint8_t *resultData, uint8_t &resultLength);
     void handleFunctionPropertyChangeNfc(uint8_t *data, uint8_t *resultData, uint8_t &resultLength);
     void handleFunctionPropertySyncNfc(uint8_t *data, uint8_t *resultData, uint8_t &resultLength);
     void handleFunctionPropertyDeleteNfc(uint8_t *data, uint8_t *resultData, uint8_t &resultLength);
@@ -133,7 +135,7 @@ class AccessControl : public OpenKNX::Module
 
     OpenKNX::Flash::Driver _fingerprintStorage;
     OpenKNX::Flash::Driver _nfcStorage;
-    ActionChannel *_channels[FIN_ChannelCount];
+    ActionChannel *_channels[ACC_ChannelCount];
 
     Fingerprint *finger = nullptr;
     bool hasLastFoundLocation = false;

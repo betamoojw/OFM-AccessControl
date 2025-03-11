@@ -10,11 +10,11 @@
             "args": [
                 "baggages",
                 "--DocFileName",
-                "doc/Applikationbeschreibung-Praesenz.md",
+                "doc/Applikationsbeschreibung-Zutrittskontrolle.md",
                 "--BaggagesDir",
                 "src/Baggages/Help_de",
                 "--Prefix",
-                "PM"
+                "ACC"
             ],
             "problemMatcher": [],
             "group": "test"

@@ -4,7 +4,7 @@
   <ManufacturerData>
     <Manufacturer RefId="M-00FA">
       <ApplicationPrograms>
-        <ApplicationProgram Id="%AID%" ApplicationNumber="200" ApplicationVersion="1" ProgramType="ApplicationProgram" MaskVersion="MV-07B0" Name="FIN" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de" DynamicTableManagement="false" Linkable="false" MinEtsVersion="4.0">
+        <ApplicationProgram Id="%AID%" ApplicationNumber="200" ApplicationVersion="1" ProgramType="ApplicationProgram" MaskVersion="MV-07B0" Name="ACC" LoadProcedureStyle="MergedProcedure" PeiType="0" DefaultLanguage="de" DynamicTableManagement="false" Linkable="false" MinEtsVersion="4.0">
           <Static>
             <Parameters>
               <Parameter Id="%AID%_P-%T%%CCCC%00" Name="Act%C%Description" ParameterType="%AID%_PT-Text40Byte" Text="Beschreibung des Fingers" Value="" />
@@ -31,7 +31,7 @@
               <ParameterRef Id="%AID%_UP-%T%%CCCC%07_R-%T%%CCCC%0701" RefId="%AID%_UP-%T%%CCCC%07" />
             </ParameterRefs>
             <!-- <ParameterCalculations>
-              <ParameterCalculation Id="%AID%_PC-%T%%CCCC%02" Language="JavaScript" Name="RefreshFingerAct%C%" LRTransformationFunc="FIN_refreshFingerAction" LRTransformationParameters="{ &quot;Action&quot;: %C% }" RLTransformationFunc="FIN_dummy">
+              <ParameterCalculation Id="%AID%_PC-%T%%CCCC%02" Language="JavaScript" Name="RefreshFingerAct%C%" LRTransformationFunc="ACC_refreshFingerAction" LRTransformationParameters="{ &quot;Action&quot;: %C% }" RLTransformationFunc="ACC_dummy">
                 <LParameters>
                   <ParameterRefRef RefId="%AID%_UP-%T%%CCCC%02_R-%T%%CCCC%0201" AliasName="ActionActive" />
                 </LParameters>
