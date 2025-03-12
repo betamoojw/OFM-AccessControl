@@ -300,6 +300,8 @@ bool Fingerprint::createTemplate()
 {
     if (!scannerReady)
         return false;
+    
+    enrollProgress = 0;
 
     logDebugP("Create template:");
     logIndentUp();
@@ -307,6 +309,7 @@ bool Fingerprint::createTemplate()
     u_int8_t p;
     for (u_int8_t i = 1; i < 7; i++)
     {
+        enrollProgress = i;
         setLed(WaitForFinger);
 
         if (i == 1)
@@ -414,6 +417,7 @@ bool Fingerprint::createTemplate()
 
     logDebugP("Creating model...");
     logIndentUp();
+    enrollProgress = 7;
     p = _finger.createModel();
     switch (p)
     {
@@ -518,6 +522,8 @@ bool Fingerprint::storeTemplate(uint16_t location)
     if (!scannerReady)
         return false;
 
+    enrollProgress = 8;
+    
     logDebugP("Store model #%d:", location);
     logIndentUp();
     bool success = _finger.storeModel(location) == FINGERPRINT_OK;

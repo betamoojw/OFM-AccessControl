@@ -40,7 +40,8 @@ class Fingerprint
         uint16_t checksum;
     };
 
-    bool scannerReady;
+    bool scannerReady = false;
+    uint8_t enrollProgress = 0;
 
     Fingerprint(uint32_t overridePassword = 0);
     Fingerprint(DelayCalback delayCallback, uint32_t overridePassword = 0);
