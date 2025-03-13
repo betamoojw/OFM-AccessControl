@@ -389,23 +389,55 @@ void AccessControl::loopNfc()
 
             if (enrollNfcStarted > 0)
             {
-                uint32_t storageOffset = ACC_CalcNfcStorageOffset(enrollNfcId);
-                logDebugP("storageOffset: %d", storageOffset);
-                _nfcStorage.write(storageOffset, const_cast<uint8_t*>(uniqueId), uniqueIdLength);
-                _nfcStorage.commit();
+                uint32_t storageOffset = 0;
+                uint8_t tagUid[10] = {};
+                for (uint16_t nfcId = 0; nfcId < MAX_NFCS; nfcId++)
+                {
+                    storageOffset = ACC_CalcNfcStorageOffset(nfcId);
+                    _nfcStorage.read(storageOffset, tagUid, 10);
+                    if (!memcmp(tagUid, uniqueId, 10))
+                    {
+                        enrollNfcDuplicate = true;
+                        logInfoP("Not enrolled as unique tag ID already present in nfcID %u.", nfcId);
+                        break;
+                    }
+                }
 
-                logInfoP("Enrolled to nfcID %u.", enrollNfcId);
-                KoACC_FingerEnrollSuccess.value(true, DPT_Switch);
-                KoACC_FingerEnrollSuccessId.value(enrollNfcId, Dpt(7, 1));
-        
-                KoACC_FingerEnrollSuccess.valueNoSend(enrollNfcId, Dpt(15, 1, 0)); // access identification code
-                KoACC_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 1));    // detection error
-                KoACC_FingerEnrollSuccess.valueNoSend(true, Dpt(15, 1, 2));     // permission accepted
-                KoACC_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
-                KoACC_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
-                KoACC_FingerEnrollSuccess.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
-                
-                digitalWrite(LED_GREEN_PIN, HIGH);
+                if (!enrollNfcDuplicate)
+                {
+                    storageOffset = ACC_CalcNfcStorageOffset(enrollNfcId);
+                    logDebugP("storageOffset: %d", storageOffset);
+                    _nfcStorage.write(storageOffset, const_cast<uint8_t*>(uniqueId), uniqueIdLength);
+                    _nfcStorage.commit();
+
+                    logInfoP("Enrolled to nfcID %u.", enrollNfcId);
+                    KoACC_FingerEnrollSuccess.value(true, DPT_Switch);
+                    KoACC_FingerEnrollSuccessId.value(enrollNfcId, Dpt(7, 1));
+            
+                    KoACC_FingerEnrollSuccess.valueNoSend(enrollNfcId, Dpt(15, 1, 0)); // access identification code
+                    KoACC_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 1));    // detection error
+                    KoACC_FingerEnrollSuccess.valueNoSend(true, Dpt(15, 1, 2));     // permission accepted
+                    KoACC_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
+                    KoACC_FingerEnrollSuccess.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
+                    KoACC_FingerEnrollSuccess.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
+                    
+                    digitalWrite(LED_GREEN_PIN, HIGH);
+                }
+                else
+                {
+                    KoACC_FingerEnrollSuccess.value(false, DPT_Switch);
+                    KoACC_FingerEnrollFailedId.value(enrollNfcId, Dpt(7, 1));
+            
+                    KoACC_FingerEnrollSuccessData.valueNoSend(enrollNfcId, Dpt(15, 1, 0)); // access identification code
+                    KoACC_FingerEnrollSuccessData.valueNoSend(true, Dpt(15, 1, 1));     // detection error
+                    KoACC_FingerEnrollSuccessData.valueNoSend(false, Dpt(15, 1, 2));    // permission accepted
+                    KoACC_FingerEnrollSuccessData.valueNoSend(false, Dpt(15, 1, 3));    // read direction (not used)
+                    KoACC_FingerEnrollSuccessData.valueNoSend(false, Dpt(15, 1, 4));    // encryption (not used for now)
+                    KoACC_FingerEnrollSuccessData.value((uint8_t)0, Dpt(15, 1, 5));     // index of access identification code (not used)
+                    
+                    digitalWrite(LED_RED_PIN, HIGH);
+                }
+
                 resetTouchPcbLedTimer = delayTimerInit();
                 enrollNfcStarted = 0;
             }
@@ -965,6 +997,7 @@ void AccessControl::processInputKoEnrollNfc(GroupObject &ko)
 
     enrollNfcStarted = delayTimerInit();
     enrollNfcId = nfcId;
+    enrollNfcDuplicate = false;
 }
 
 void AccessControl::startSyncDelete(SyncType syncType, uint16_t deleteId)
@@ -1822,6 +1855,7 @@ void AccessControl::handleFunctionPropertyEnrollNfc(uint8_t *data, uint8_t *resu
 
     enrollNfcStarted = delayTimerInit();
     enrollNfcId = nfcId;
+    enrollNfcDuplicate = false;
     
     resultData[0] = 0;
     resultLength = 1;
