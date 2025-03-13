@@ -1423,12 +1423,14 @@ void AccessControl::handleFunctionPropertyWaitEnrollFingerFinished(uint8_t *data
 
     // resultData[0] true, if enroll request is finished
     resultData[0] = enrollRequestedFingerTimer == 0;
-    resultLength = 1;
+    resultLength = 2;
     if (enrollRequestedFingerTimer == 0)
     {
         // resultData[1] true, if enroll request was successful
         resultData[1] = syncRequestedFingerTimer > 0;
-        resultLength = 2;
+    } else {
+        // as long as enroll is not finished, return progress
+        resultData[1] = finger->enrollProgress;
     }
     // logIndentDown();
 }

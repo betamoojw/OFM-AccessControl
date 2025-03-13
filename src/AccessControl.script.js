@@ -359,9 +359,23 @@ function ACC_enrollFinger(device, online, progress, context) {
         if (resp[0] == 0) {
             // poll to check if enroll is finished
             while (resp[0] == 0 && !lCancelled) {
+                var fingerProgress = resp[1];
+                switch (fingerProgress) {
+                    case 0:
+                        break;
+                    case 7:
+                        progress.setText("Fingerprint: Finger ID " + parFingerId.value + " anlernen: Fingermodell erstellen...");
+                        break;
+                    case 8:
+                        progress.setText("Fingerprint: Finger ID " + parFingerId.value + " anlernen: Fingermodell speichern...");
+                        break;
+                    default:
+                        progress.setText("Fingerprint: Finger ID " + parFingerId.value + " anlernen: Muster " + fingerProgress + " von 6...");
+                        break;
+                }
                 data = [7];
                 data = data.concat(0); // zero-terminated string
-                lPercent += (90.0-lPercent)/40.0;
+                lPercent = fingerProgress / 9.0 * 100.0;
                 if (lPercent <= 100) progress.setProgress(lPercent);
                 ACC_sleep(1000);
                 resp = online.invokeFunctionProperty(160, 3, data);
@@ -751,7 +765,8 @@ function ACC_enrollNfc(device, online, progress, context) {
                 } else {
                     progress.setText("NFC: Tag ID " + parNfcId.value + " anlernen erfolgreich.");
                     var UID = "";
-                    for (var i = 2; i < 12 && resp[i] > 0; i++) {
+                    for (var i = 2; i < 12; i++) {
+                        if (resp[i] == 0 && (i == 6 || i == 9)) break;
                         UID += ACC_HexDigits[resp[i]>>4] + ACC_HexDigits[resp[i]&0x0F];
                     }
                     var parNfcTagUid = device.getParameterByName("ACC_EnrollNfcKey");
