@@ -100,6 +100,7 @@ class AccessControl : public OpenKNX::Module
     bool enrollFinger(uint16_t location);
     bool deleteFinger(uint16_t location, bool sync = true);
     bool deleteNfc(uint16_t nfcId, bool sync = true);
+    void sendScanAccessData(SyncType syncType, bool success, uint16_t foundId = 0);
     bool searchForFinger();
     void resetRingLed();
     void startSyncDelete(SyncType syncType, uint16_t deleteId);
