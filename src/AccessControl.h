@@ -29,6 +29,8 @@
 #define CHECK_SENSOR_DELAY 1000
 #define SHUTDOWN_SENSOR_DELAY 3000
 
+#define ACC_ID_INVALID 65535
+
 #define MAX_FINGERS 1500
 #define OPENKNX_ACC_FLASH_FINGER_MAGIC_WORD 2912744758
 #define OPENKNX_ACC_FLASH_FINGER_DATA_SIZE 29 // 1 byte: which finger, 28 bytes: person name
@@ -148,9 +150,8 @@ class AccessControl : public OpenKNX::Module
     uint32_t enrollRequestedFingerTimer = 0;
     uint16_t enrollRequestedFingerLocation = 0;
     uint32_t enrollNfcStarted = 0;
-    uint16_t enrollNfcId = 0;
-    bool enrollNfcDuplicate = false;
-    uint16_t enrollNfcDuplicateId = 0;
+    uint16_t enrollNfcId = ACC_ID_INVALID;
+    uint16_t enrollNfcDuplicateId = ACC_ID_INVALID;
     bool enrollNfcLedOn = false;
     uint32_t enrollNfcLedLastChanged = 0;
     uint32_t checkSensorTimer = 0;

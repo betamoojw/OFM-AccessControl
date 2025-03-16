@@ -351,7 +351,7 @@ void AccessControl::loopNfc()
             resetTouchPcbLedTimer = delayTimerInit();
 
             enrollNfcStarted = 0;
-            enrollNfcId = 0;
+            enrollNfcId = ACC_ID_INVALID;
         }
 
         if (delayCheck(enrollNfcLedLastChanged, NFC_ENROLL_LED_BLINK_INTERVAL))
@@ -384,19 +384,19 @@ void AccessControl::loopNfc()
             {
                 uint32_t storageOffset = 0;
                 uint8_t tagUid[10] = {};
-                for (enrollNfcDuplicateId = 0; enrollNfcDuplicateId < MAX_NFCS; enrollNfcDuplicateId++)
+                for (uint16_t i = 0; i < MAX_NFCS; i++)
                 {
-                    storageOffset = ACC_CalcNfcStorageOffset(enrollNfcDuplicateId);
+                    storageOffset = ACC_CalcNfcStorageOffset(i);
                     _nfcStorage.read(storageOffset, tagUid, 10);
                     if (!memcmp(tagUid, uniqueId, 10))
                     {
-                        enrollNfcDuplicate = true;
+                        enrollNfcDuplicateId = i;
                         logInfoP("Not enrolled as unique tag ID already present in nfcID %u.", enrollNfcDuplicateId);
                         break;
                     }
                 }
 
-                if (!enrollNfcDuplicate)
+                if (enrollNfcDuplicateId > ACC_ID_INVALID)
                 {
                     storageOffset = ACC_CalcNfcStorageOffset(enrollNfcId);
                     logDebugP("storageOffset: %d", storageOffset);
@@ -888,7 +888,7 @@ void AccessControl::processInputKoEnrollNfc(GroupObject &ko)
 
     enrollNfcStarted = delayTimerInit();
     enrollNfcId = nfcId;
-    enrollNfcDuplicate = false;
+    enrollNfcDuplicateId = ACC_ID_INVALID;
 }
 
 void AccessControl::startSyncDelete(SyncType syncType, uint16_t deleteId)
@@ -1746,7 +1746,7 @@ void AccessControl::handleFunctionPropertyEnrollNfc(uint8_t *data, uint8_t *resu
 
     enrollNfcStarted = delayTimerInit();
     enrollNfcId = nfcId;
-    enrollNfcDuplicate = false;
+    enrollNfcDuplicateId = ACC_ID_INVALID;
     
     resultData[0] = 0;
     resultLength = 1;
@@ -1764,14 +1764,14 @@ void AccessControl::handleFunctionPropertyWaitEnrollNfcFinished(uint8_t *data, u
     if (enrollNfcStarted == 0)
     {
         // resultData[1] true, if enroll request was successful
-        resultData[1] = (enrollNfcId > 0 && !enrollNfcDuplicate);
+        resultData[1] = (enrollNfcId != ACC_ID_INVALID && enrollNfcDuplicateId > ACC_ID_INVALID);
         // resultData[2] true, duplicate Nfc UID detected
-        resultData[2] = enrollNfcDuplicate;
+        resultData[2] = enrollNfcDuplicateId > ACC_ID_INVALID;
         resultLength = 3;
-        if (enrollNfcId > 0 || enrollNfcDuplicate) // if successful or duplicate detected
+        if (enrollNfcId != ACC_ID_INVALID || enrollNfcDuplicateId > ACC_ID_INVALID) // if successful or duplicate detected
         {
             // resultData[3-12] tag UID
-            _nfcStorage.read(ACC_CalcNfcStorageOffset((uint32_t)(enrollNfcDuplicate ? enrollNfcDuplicateId : enrollNfcId)), resultData + 3, 10);
+            _nfcStorage.read(ACC_CalcNfcStorageOffset((uint32_t)(enrollNfcDuplicateId > ACC_ID_INVALID ? enrollNfcDuplicateId : enrollNfcId)), resultData + 3, 10);
             // resultData[13-14] duplicate Nfc ID
             resultData[13] = enrollNfcDuplicateId >> 8;
             resultData[14] = enrollNfcDuplicateId & 0xFF;
