@@ -384,14 +384,14 @@ void AccessControl::loopNfc()
             {
                 uint32_t storageOffset = 0;
                 uint8_t tagUid[10] = {};
-                for (uint16_t nfcId = 0; nfcId < MAX_NFCS; nfcId++)
+                for (enrollNfcDuplicateId = 0; enrollNfcDuplicateId < MAX_NFCS; enrollNfcDuplicateId++)
                 {
-                    storageOffset = ACC_CalcNfcStorageOffset(nfcId);
+                    storageOffset = ACC_CalcNfcStorageOffset(enrollNfcDuplicateId);
                     _nfcStorage.read(storageOffset, tagUid, 10);
                     if (!memcmp(tagUid, uniqueId, 10))
                     {
                         enrollNfcDuplicate = true;
-                        logInfoP("Not enrolled as unique tag ID already present in nfcID %u.", nfcId);
+                        logInfoP("Not enrolled as unique tag ID already present in nfcID %u.", enrollNfcDuplicateId);
                         break;
                     }
                 }
@@ -774,8 +774,8 @@ void AccessControl::processInputKo(GroupObject& ko)
         case ACC_KoNfcEnrollId:
             processInputKoEnrollNfc(ko);
             break;
-        case ACC_KoFingerRemoteManagement:
-        case ACC_KoNfcRemoteManagement:
+        case ACC_KoRemoteManagementCommand:
+        case ACC_KoRemoteManagementStatus:
             //###ToDo: Implement
             break;
         case ACC_KoVacInput:
@@ -1764,13 +1764,18 @@ void AccessControl::handleFunctionPropertyWaitEnrollNfcFinished(uint8_t *data, u
     if (enrollNfcStarted == 0)
     {
         // resultData[1] true, if enroll request was successful
-        resultData[1] = (enrollNfcId > 0);
-        resultLength = 2;
-        if (enrollNfcId > 0)
+        resultData[1] = (enrollNfcId > 0 && !enrollNfcDuplicate);
+        // resultData[2] true, duplicate Nfc UID detected
+        resultData[2] = enrollNfcDuplicate;
+        resultLength = 3;
+        if (enrollNfcId > 0 || enrollNfcDuplicate) // if successful or duplicate detected
         {
-            // resultData[2-11] tag UID
-            _nfcStorage.read(ACC_CalcNfcStorageOffset(enrollNfcId), resultData + 2, 10);
-            resultLength = 12;
+            // resultData[3-12] tag UID
+            _nfcStorage.read(ACC_CalcNfcStorageOffset((uint32_t)(enrollNfcDuplicate ? enrollNfcDuplicateId : enrollNfcId)), resultData + 3, 10);
+            // resultData[13-14] duplicate Nfc ID
+            resultData[13] = enrollNfcDuplicateId >> 8;
+            resultData[14] = enrollNfcDuplicateId & 0xFF;
+            resultLength = 15;
         }
     }
     // logIndentDown();

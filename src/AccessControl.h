@@ -150,6 +150,7 @@ class AccessControl : public OpenKNX::Module
     uint32_t enrollNfcStarted = 0;
     uint16_t enrollNfcId = 0;
     bool enrollNfcDuplicate = false;
+    uint16_t enrollNfcDuplicateId = 0;
     bool enrollNfcLedOn = false;
     uint32_t enrollNfcLedLastChanged = 0;
     uint32_t checkSensorTimer = 0;

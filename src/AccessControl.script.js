@@ -761,17 +761,30 @@ function ACC_enrollNfc(device, online, progress, context) {
             }
             if (resp[0] == 1 && !lCancelled) {
                 if (resp[1] == 0) {
-                    throw new Error("NFC: Tag ID " + parNfcId.value + " anlernen fehlgeschlagen!");
+                    // was not able to enroll
+                    if (resp[2] == 0) {
+                        // timeout or other erreor
+                        throw new Error("NFC: Tag ID " + parNfcId.value + " anlernen fehlgeschlagen!");
+                    } else {
+                        // duplicate UID
+                        var UID = "";
+                        for (var i = 3; i < 13; i++) {
+                            if (resp[i] == 0 && (i == 7 || i == 10)) break;
+                            UID += ACC_HexDigits[resp[i]>>4] + ACC_HexDigits[resp[i]&0x0F];
+                        }
+                        var duplicateId = resp[13] << 8 | resp[14];
+                        throw new Error("NFC: Tag ID " + parNfcId.value + " anlernen: UID " + UID + " bereits an Tag ID " + duplicateId + " angelernt.");
+                    }       
                 } else {
                     progress.setText("NFC: Tag ID " + parNfcId.value + " anlernen erfolgreich.");
                     var UID = "";
-                    for (var i = 2; i < 12; i++) {
-                        if (resp[i] == 0 && (i == 6 || i == 9)) break;
+                    for (var i = 3; i < 13; i++) {
+                        if (resp[i] == 0 && (i == 7 || i == 10)) break;
                         UID += ACC_HexDigits[resp[i]>>4] + ACC_HexDigits[resp[i]&0x0F];
                     }
                     var parNfcTagUid = device.getParameterByName("ACC_EnrollNfcKey");
                     parNfcTagUid.value = UID;
-                    info("AccessControl - UID: " + UID);
+                    // info("AccessControl - UID: " + UID);
                 }
             }
         }
