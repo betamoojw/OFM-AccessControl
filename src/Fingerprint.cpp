@@ -282,6 +282,8 @@ Fingerprint::FindFingerResult Fingerprint::findFingerprint()
     }
     else
     {
+        logDebugP("No match with confidence %d", _finger.confidence);
+
         findFingerResult.found = false;
         findFingerResult.location = 0;
 #ifdef CALC_TEMPLATE_CHECKUM
@@ -289,7 +291,6 @@ Fingerprint::FindFingerResult Fingerprint::findFingerprint()
 #endif
     }
 
-    logDebugP("No match");
     //setLed(ScanNoMatch);
 
     logIndentDown();
