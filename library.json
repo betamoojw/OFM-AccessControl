@@ -12,5 +12,12 @@
     "repository": {
         "type": "git",
         "url": "https://github.com/OpenKNX/OFM-AccessControl.git"
+    },
+    "dependencies":
+    {
+        "frankboesing/FastCRC": "^1.41",
+        "lz4": "https://github.com/ab-tools/lz4.git",
+        "PN7160": "https://github.com/ab-tools/PN7160"
     }
+  
 }

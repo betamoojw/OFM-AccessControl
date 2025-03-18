@@ -272,7 +272,7 @@ Fingerprint::FindFingerResult Fingerprint::findFingerprint()
         findFingerResult.checksum = checksum;
 #endif
 
-        logDebugP("Match #%d with confidence %d", _finger.fingerID, _finger.confidence);
+        logInfoP("Match #%d with confidence %d", _finger.fingerID, _finger.confidence);
 
         findFingerResult.found = true;
         findFingerResult.location = location;
@@ -282,7 +282,7 @@ Fingerprint::FindFingerResult Fingerprint::findFingerprint()
     }
     else
     {
-        logDebugP("No match with confidence %d", _finger.confidence);
+        logInfoP("No match with confidence %d", _finger.confidence);
 
         findFingerResult.found = false;
         findFingerResult.location = 0;

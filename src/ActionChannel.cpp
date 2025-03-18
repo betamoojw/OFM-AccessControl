@@ -43,12 +43,13 @@ bool ActionChannel::processScan(uint16_t location)
 {
     // here are 3 cases relevant:
     // authentication is active and the action is without auth-flag => skip processing
-    // authentication is inaction and the action has the auth-flag => skip processing
-    // authentication is inaction and the action is locked
+    // authentication is inactive and the action has the auth-flag => skip processing
+    // authentication is inactive and the action is locked
     if (_authenticateActive != ParamACC_ActAuthenticate ||
-        !ParamACC_ActAuthenticate && ACC_KoActCallLock)
+        (!ParamACC_ActAuthenticate && KoACC_ActCallLock.value(DPT_Switch)))
         return false;
 
+    // execute only if this ia an action without authentifiaction or it is already authenticated
     if (!ParamACC_ActAuthenticate || KoACC_ActCallLock.value(DPT_Switch))
     {
         switch (ParamACC_ActActionType)
