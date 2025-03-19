@@ -65,6 +65,9 @@ void AccessControl::setup()
 
 void AccessControl::initNfc()
 {
+    if (ParamACC_NfcScanner == 0)
+        return;
+
 #ifdef NCI_DEBUG
     logging::initialize();
     logging::enable(logging::destination::destUart1);
@@ -339,6 +342,9 @@ void AccessControl::loop()
 
 void AccessControl::loopNfc()
 {
+    if (ParamACC_NfcScanner == 0)
+        return;
+
     if (enrollNfcStarted > 0)
     {
         if (delayCheck(enrollNfcStarted, NFC_ENROLL_TIMEOUT))
