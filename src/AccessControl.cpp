@@ -402,7 +402,7 @@ void AccessControl::loopNfc()
                     }
                 }
 
-                if (enrollNfcDuplicateId > ACC_ID_INVALID)
+                if (enrollNfcDuplicateId == ACC_ID_INVALID)
                 {
                     storageOffset = ACC_CalcNfcStorageOffset(enrollNfcId);
                     logDebugP("storageOffset: %d", storageOffset);
@@ -1770,7 +1770,7 @@ void AccessControl::handleFunctionPropertyWaitEnrollNfcFinished(uint8_t *data, u
     if (enrollNfcStarted == 0)
     {
         // resultData[1] true, if enroll request was successful
-        resultData[1] = (enrollNfcId != ACC_ID_INVALID && enrollNfcDuplicateId > ACC_ID_INVALID);
+        resultData[1] = (enrollNfcId != ACC_ID_INVALID && enrollNfcDuplicateId == ACC_ID_INVALID);
         // resultData[2] true, duplicate Nfc UID detected
         resultData[2] = enrollNfcDuplicateId > ACC_ID_INVALID;
         resultLength = 3;
