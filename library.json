@@ -1,6 +1,6 @@
 {
     "name": "OFM-AccessControl",
-    "version": "0.7.0",
+    "version": "0.8.0",
     "description": "Access control library for OpenKNX framework",
     "homepage": "https://openknx.de",
     "authors": {
@@ -17,7 +17,7 @@
     {
         "frankboesing/FastCRC": "^1.41",
         "lz4": "https://github.com/ab-tools/lz4.git",
-        "PN7160": "https://github.com/ab-tools/PN7160"
+        "PN7160": "https://github.com/Strooom/PN7160#RP2040"
     }
   
 }

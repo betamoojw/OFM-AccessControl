@@ -19,7 +19,7 @@
           </Static>
           <Dynamic>
             <ChannelIndependentBlock>
-              <choose ParamRefId="%AID%_P-%T%900009_R-%T%90000901">
+              <choose ParamRefId="%AID%_P-%T%920009_R-%T%92000901">
                 <when test="&gt;=%C%">
                   <ParameterBlock Id="%AID%_PB-nnn" Inline="true" Layout="Grid">
                     <Rows>

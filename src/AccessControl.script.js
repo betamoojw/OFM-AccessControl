@@ -591,7 +591,7 @@ function ACC_searchNfcId(device, online, progress, context) {
     parNumberSearchResults.value = 0;
     parNumberSearchResultsToDisplay.value = 0;
 
-    progress.setText("NFC: NFC ID zu Tag " + parNfcName.value + " suchen...");
+    progress.setText("NFC: Tag ID zum Tag Namen " + parNfcName.value + " suchen...");
     online.connect();
 
     var data = [112]; // internal function ID
@@ -611,7 +611,7 @@ function ACC_searchNfcId(device, online, progress, context) {
     var resp = online.invokeFunctionProperty(160, 3, data);
     if (resp[0] != 0) {
         if (resp[0] == 1) {
-            progress.setText("NFC: NFC ID zu Tag " + parNfcName.value + " nicht gefunden.");
+            progress.setText("NFC: Tag ID zum Tag Namen " + parNfcName.value + " nicht gefunden.");
             online.disconnect();
             return;
         } else {
@@ -623,28 +623,28 @@ function ACC_searchNfcId(device, online, progress, context) {
 
     var numRes = (resp.length - 3) / 40;
     var totalMatches = resp[1] << 8 | resp[2];
-    // info("totalMatches " + totalMatches);
-    progress.setText("NFC: " + totalMatches + " NFC ID(s) zu Tag " + parNfcName.value + " gefunden.");
+    info("totalMatches " + totalMatches);
+    progress.setText("NFC: " + totalMatches + " Tag ID(s) zum Tag Namen " + parNfcName.value + " gefunden.");
 
     // following up to 10 results in total
-    // always 2 bytes fingerId, 1 byte personFinger and 28 bytes nfcName
-    // info("Bevor: " + parNumberSearchResults.value);
+    // always 2 bytes nfcId, 10 byte UID and 28 bytes nfcName
+    info("Bevor: " + parNumberSearchResults.value);
     parNumberSearchResultsText.value = totalMatches;
     parNumberSearchResultsToDisplay.value = numRes;
     if (totalMatches > numRes) {
         parNumberSearchResults.value = 1;
     }
 
-    // info("Danach: " + parNumberSearchResults.value);
+    info("Danach: " + parNumberSearchResults.value);
     for (var row = 1; row <= numRes; row++) {
         // info("NFCACT_Person" + row + "Name");
         parNfcName = device.getParameterByName("NFCACTSER_Nfc" + row + "Name");
         parNfcId = device.getParameterByName("NFCACTSER_Nfc" + row + "Id");
 
-        var res = (row - 1) * 31 + 3;
-        // info("res " + row + ": " + res);
-        var fingerId = resp[res + 0] << 8 | resp[res + 1];
-        // info("fingerid: " + fingerId);
+        var res = (row - 1) * 40 + 3;
+        info("res " + row + ": " + res);
+        var nfcId = resp[res + 0] << 8 | resp[res + 1];
+        info("nfcId: " + nfcId);
         
         // NFC tag UID, 10 bytes, currently ignored
 
@@ -655,10 +655,10 @@ function ACC_searchNfcId(device, online, progress, context) {
 
             nfcName += String.fromCharCode(resp[i]);
         }
-        // info("nfcName: " + nfcName);
+        info("nfcName: " + nfcName);
 
         parNfcName.value = nfcName;
-        parNfcId.value = fingerId;
+        parNfcId.value = nfcId;
     }
 }
 
@@ -669,18 +669,18 @@ function ACC_searchNfcName(device, online, progress, context) {
     var parNumberSearchResults = device.getParameterByName("NFCACT_NumberSearchResults");
 
     parNumberSearchResults.value = 0;
-    var fingerId = parNfcId.value;
+    var nfcId = parNfcId.value;
 
-    progress.setText("NFC: NFC-Tag zu Finger ID " + fingerId + " suchen...");
+    progress.setText("NFC: Tag Namen zu Tag ID " + nfcId + " suchen...");
     online.connect();
 
     var data = [111]; // internal function ID
-    data = data.concat((fingerId & 0x0000ff00) >> 8, (fingerId & 0x000000ff));
+    data = data.concat((nfcId & 0x0000ff00) >> 8, (nfcId & 0x000000ff));
 
     var resp = online.invokeFunctionProperty(160, 3, data);
     if (resp[0] != 0) {
         if (resp[0] == 1) {
-            progress.setText("NFC: NFC-Tag zu Finger ID " + fingerId + " nicht gefunden.");
+            progress.setText("NFC: Tag Namen zu Tag ID " + nfcId + " nicht gefunden.");
             online.disconnect();
             return;
         } else {
@@ -689,7 +689,7 @@ function ACC_searchNfcName(device, online, progress, context) {
     }
 
     online.disconnect();
-    progress.setText("NFC: NFC-Tag zu Finger ID " + fingerId + " gefunden.");
+    progress.setText("NFC: Tag Namen zu Tag ID " + nfcId + " gefunden.");
 
     // NFC tag UID, 10 bytes, currently ignored
 
@@ -706,8 +706,7 @@ function ACC_searchNfcName(device, online, progress, context) {
     parNfcName = device.getParameterByName("NFCACTSER_Nfc1Name");
     parNfcId = device.getParameterByName("NFCACTSER_Nfc1Id");
     parNfcName.value = nfcName;
-    parPersonFinger.value = personFinger;
-    parNfcId.value = fingerId;
+    parNfcId.value = nfcId;
 }
 
 var ACC_HexDigits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'];

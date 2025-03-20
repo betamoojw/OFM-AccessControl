@@ -19,11 +19,56 @@ Es gibt eine kleinere Applikationsversion mit bis zu 200 Aktionen/Fingerzuordnun
 Im folgenden werden Änderungen an dem Dokument erfasst, damit man nicht immer das Gesamtdokument lesen muss, um Neuerungen zu erfahren.
 
 
-26.02.2025: Firmware 0.7, Applikation 0.7
+26.02.2025: Firmware 0.8, Applikation 0.8
 
 * NEU: Die Applikation wurde in "Zutrittskontrolle" umbenannt.
 * NEU: Die Abfrage von NFC-Tags wird jetzt unterstützt.
 * NEU: Die Applikation nutzt jetzt das neue Modul AccessControl.
+* NEU: Aktionen, die keine Authorisierung erfordern, haben jetzt ein Sperr-KO
+
+14.10.2024: Firmware 0.6.13, Applikation 0.6
+
+* FIX: Erhöhung des Timesouts bei der Anlernung.
+* FIX: Fehlgeschlagener Anlernvorgang wurde trotzdem mit einem Erfolg im Anlern-KO quittiert.
+
+09.10.2024: Firmware 0.6.7, Applikation 0.6
+
+* HW-SUPPORT: Unterstützung für AB-SmartHouse Fingerprint Hardware-Revision v1.7 und neuer hinzugefügt.
+
+20.08.2024: Firmware 0.6.6, Applikation 0.6
+
+* FIX: Seltener Fall, bei dem der Fingerprint fälschlicherweise dachte, er sei gesperrt, ist korrigiert.
+* FIX: Diverse interne Verbesserungen im Ablauf der Verarbeitung und KNX-Kommunikation.
+* FIX: Einige Standard-KO-Flags wurden korrigiert (wirkt sich nur bei neuen Installationen in er ETS aus).
+
+01.08.2024: Firmware 0.6.3, Applikation 0.6
+
+* CHANGE: Scanner reagiert nun auf externe Farbkontrolle, auch wenn er gerade gesperrt ist.
+* CHANGE: Ist der "Fortlaufend"-Modus aktiv und bleibt derselbe Finger auf dem Scanner, werden Ereignisse und Aktion nur einmal ausgeführt.
+* CHANGE: Das KO "Berührung (sofort, immer)" wird nun in beiden Modi bei Berührung auf True und, nachdem der Finger entfernt wurde, auch wieder auf False gesetzt.
+
+22.07.2024: Firmware 0.6.2, Applikation 0.6
+
+* NEU: Eine aktive Sperre schaltet den Led-Ring nun auf rot.
+* FIX: Scannen von Fingern war trotz aktiver Sperre möglich.
+
+
+20.07.2024: Firmware 0.6.1, Applikation 0.6
+
+* FIX: Fingerprint wartet nun nicht länger auf weitere Finger, wenn ein Fingerscan fehlgeschlagen ist.
+* FIX: Die Schaltung des Relais' der zusätzlichen Relais- und Binäreingangsplatine war invertiert.
+
+13.07.2024: Firmware 0.6, Applikation 0.6
+
+* NEU: Unterstützung für kommende Relais- und Binäreingangsplatine hinzugefügt.
+* NEU: Option für kontinuierlichen Scan hinzugefügt (unabhängig vom Berührungsereignis).
+* NEU: Scanner-Verbindung wird nun überwacht und Änderung als KO ausgegeben.
+* NEU: Nach Neustart werden für Aktionen "Umschalten" "GroupValueRead"-Telegramme gesendet.
+* NEU: Konfigurationstransfer hinzugefügt.
+* FIX: Eingestellte Wartezeit auf Autorisierung wird und korrekt verwendet.
+* FIX: Der Fingerprint-LED-Ring leuchtet nun gelb anstatt grün, wenn eine Autorisierungsaktion nicht ausgeführt werden konnte.
+* Dokumentation aktualisiert.
+* UI-Verbesserungen.
 
 10.07.2024: Firmware 0.3, Applikation 0.3
 
