@@ -27,7 +27,7 @@
               <Parameter Id="%AID%_P-%T%900004" Name="PersonFinger" ParameterType="%AID%_PT-FingerSearch" Text="Finger der Person" Value="0" />
               <Parameter Id="%AID%_P-%T%900005" Name="FingerId" ParameterType="%AID%_PT-FingerId" Text="Scanner Finger ID" Value="0" />
               <Parameter Id="%AID%_P-%T%900006" Name="FingerActionLine" ParameterType="%AID%_PT-FINACTNumChannels" Text="Zeile für Zuweisung" Value="1" />
-              <Parameter Id="%AID%_P-%T%900007" Name="NumberSearchResults" ParameterType="%AID%_PT-ValueDpt5" Text="Anzahl Suchresultate" Value="0" Access="None" />
+              <Parameter Id="%AID%_P-%T%900007" Name="NumberSearchResultsOverflow" ParameterType="%AID%_PT-ValueDpt5" Text="Anzahl Suchresultate" Value="0" Access="None" />
               <Parameter Id="%AID%_P-%T%900008" Name="NumberSearchResultsText" ParameterType="%AID%_PT-Text5Byte" Text="Anzahl Suchresultate (als Text)" Value="0" Access="None" />
               <Parameter Id="%AID%_P-%T%900009" Name="NumberSearchResultsToDisplay" ParameterType="%AID%_PT-ValueDpt5" Text="Anzahl angezeigter Resultate" Value="0" Access="None" />
 

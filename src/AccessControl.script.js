@@ -169,11 +169,11 @@ function ACC_searchFingerId(device, online, progress, context) {
     var parPersonName = device.getParameterByName("FINACT_PersonName");
     var parPersonFinger = device.getParameterByName("FINACT_PersonFinger");
     var parFingerId = device.getParameterByName("FINACT_FingerId");
-    var parNumberSearchResults = device.getParameterByName("FINACT_NumberSearchResults");
+    var parNumberSearchResultsOverflow = device.getParameterByName("FINACT_NumberSearchResultsOverflow");
     var parNumberSearchResultsText = device.getParameterByName("FINACT_NumberSearchResultsText");
     var parNumberSearchResultsToDisplay = device.getParameterByName("FINACT_NumberSearchResultsToDisplay");
 
-    parNumberSearchResults.value = 0;
+    parNumberSearchResultsOverflow.value = 0;
     parNumberSearchResultsToDisplay.value = 0;
 
     progress.setText("Fingerprint: Finger ID zu Person " + parPersonName.value + " (" + parPersonFinger.value + ") suchen...");
@@ -226,14 +226,14 @@ function ACC_searchFingerId(device, online, progress, context) {
 
     // following up to 10 results in total
     // always 2 bytes fingerId, 1 byte personFinger and 28 bytes personName
-    // info("Bevor: " + parNumberSearchResults.value);
+    // info("Bevor: " + parNumberSearchResultsOverflow.value);
     parNumberSearchResultsText.value = totalMatches;
     parNumberSearchResultsToDisplay.value = numRes;
     if (totalMatches > numRes) {
-        parNumberSearchResults.value = 1;
+        parNumberSearchResultsOverflow.value = 1;
     }
 
-    // info("Danach: " + parNumberSearchResults.value);
+    // info("Danach: " + parNumberSearchResultsOverflow.value);
     for (var row = 1; row <= numRes; row++) {
         // info("FINACT_Person" + row + "Name");
         parPersonName = device.getParameterByName("FINACTSER_Person" + row + "Name");
@@ -265,9 +265,10 @@ function ACC_searchFingerName(device, online, progress, context) {
     var parPersonName = device.getParameterByName("FINACT_PersonName");
     var parPersonFinger = device.getParameterByName("FINACT_PersonFinger");
     var parFingerId = device.getParameterByName("FINACT_FingerId");
-    var parNumberSearchResults = device.getParameterByName("FINACT_NumberSearchResults");
+    var parNumberSearchResultsOverflow = device.getParameterByName("FINACT_NumberSearchResultsOverflow");
+    var parNumberSearchResultsToDisplay = device.getParameterByName("FINACT_NumberSearchResultsToDisplay");
 
-    parNumberSearchResults.value = 0;
+    parNumberSearchResultsOverflow.value = 0;
     var fingerId = parFingerId.value;
 
     progress.setText("Fingerprint: Person zu Finger ID " + fingerId + " suchen...");
@@ -299,7 +300,7 @@ function ACC_searchFingerName(device, online, progress, context) {
         personName += String.fromCharCode(resp[i]);
     }
 
-    parNumberSearchResults.value = 1;
+    parNumberSearchResultsToDisplay.value = 1;
 
     parPersonName = device.getParameterByName("FINACTSER_Person1Name");
     parPersonFinger = device.getParameterByName("FINACTSER_Person1Finger");
@@ -584,11 +585,11 @@ function ACC_searchNfcId(device, online, progress, context) {
     var parNfcName = device.getParameterByName("NFCACT_NfcName");
     //var parNfcTagUid = device.getParameterByName("NFCACT_NfcTagUid");
     var parNfcId = device.getParameterByName("NFCACT_NfcId");
-    var parNumberSearchResults = device.getParameterByName("NFCACT_NumberSearchResults");
+    var parNumberSearchResultsOverflow = device.getParameterByName("NFCACT_NumberSearchResultsOverflow");
     var parNumberSearchResultsText = device.getParameterByName("NFCACT_NumberSearchResultsText");
     var parNumberSearchResultsToDisplay = device.getParameterByName("NFCACT_NumberSearchResultsToDisplay");
 
-    parNumberSearchResults.value = 0;
+    parNumberSearchResultsOverflow.value = 0;
     parNumberSearchResultsToDisplay.value = 0;
 
     progress.setText("NFC: Tag ID zum Tag Namen " + parNfcName.value + " suchen...");
@@ -628,14 +629,14 @@ function ACC_searchNfcId(device, online, progress, context) {
 
     // following up to 10 results in total
     // always 2 bytes nfcId, 10 byte UID and 28 bytes nfcName
-    info("Bevor: " + parNumberSearchResults.value);
+    info("Bevor: " + parNumberSearchResultsOverflow.value);
     parNumberSearchResultsText.value = totalMatches;
     parNumberSearchResultsToDisplay.value = numRes;
     if (totalMatches > numRes) {
-        parNumberSearchResults.value = 1;
+        parNumberSearchResultsOverflow.value = 1;
     }
 
-    info("Danach: " + parNumberSearchResults.value);
+    info("Danach: " + parNumberSearchResultsOverflow.value);
     for (var row = 1; row <= numRes; row++) {
         // info("NFCACT_Person" + row + "Name");
         parNfcName = device.getParameterByName("NFCACTSER_Nfc" + row + "Name");
@@ -666,9 +667,10 @@ function ACC_searchNfcName(device, online, progress, context) {
     var parNfcName = device.getParameterByName("NFCACT_NfcName");
     //var parNfcTagUid = device.getParameterByName("NFCACT_NfcTagUid");
     var parNfcId = device.getParameterByName("NFCACT_NfcId");
-    var parNumberSearchResults = device.getParameterByName("NFCACT_NumberSearchResults");
+    var parNumberSearchResultsOverflow = device.getParameterByName("NFCACT_NumberSearchResultsOverflow");
+    var parNumberSearchResultsToDisplay = device.getParameterByName("NFCACT_NumberSearchResultsToDisplay");
 
-    parNumberSearchResults.value = 0;
+    parNumberSearchResultsOverflow.value = 0;
     var nfcId = parNfcId.value;
 
     progress.setText("NFC: Tag Namen zu Tag ID " + nfcId + " suchen...");
@@ -701,7 +703,7 @@ function ACC_searchNfcName(device, online, progress, context) {
         nfcName += String.fromCharCode(resp[i]);
     }
 
-    parNumberSearchResults.value = 1;
+    parNumberSearchResultsToDisplay.value = 1;
 
     parNfcName = device.getParameterByName("NFCACTSER_Nfc1Name");
     parNfcId = device.getParameterByName("NFCACTSER_Nfc1Id");
@@ -781,7 +783,7 @@ function ACC_enrollNfc(device, online, progress, context) {
                         if (resp[i] == 0 && (i == 7 || i == 10)) break;
                         UID += ACC_HexDigits[resp[i]>>4] + ACC_HexDigits[resp[i]&0x0F];
                     }
-                    var parNfcTagUid = device.getParameterByName("ACC_EnrollNfcKey");
+                    var parNfcTagUid = device.getParameterByName("ACC_EnrollNfcKeyReadOnly");
                     parNfcTagUid.value = UID;
                     // info("AccessControl - UID: " + UID);
                 }

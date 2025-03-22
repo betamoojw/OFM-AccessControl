@@ -20,7 +20,7 @@
               <Parameter Id="%AID%_P-%T%920003" Name="NfcName" ParameterType="%AID%_PT-Text28Byte" Text="Tag Name" Value="" />
               <Parameter Id="%AID%_P-%T%920005" Name="NfcId" ParameterType="%AID%_PT-NfcId" Text="Tag ID" Value="0" />
               <Parameter Id="%AID%_P-%T%920006" Name="NfcActionLine" ParameterType="%AID%_PT-FINACTNumChannels" Text="Zeile für Zuweisung" Value="1" />
-              <Parameter Id="%AID%_P-%T%920007" Name="NumberSearchResults" ParameterType="%AID%_PT-ValueDpt5" Text="Anzahl Suchresultate" Value="0" Access="None" />
+              <Parameter Id="%AID%_P-%T%920007" Name="NumberSearchResultsOverflow" ParameterType="%AID%_PT-ValueDpt5" Text="Anzahl Suchresultate" Value="0" Access="None" />
               <Parameter Id="%AID%_P-%T%920008" Name="NumberSearchResultsText" ParameterType="%AID%_PT-Text5Byte" Text="Anzahl Suchresultate (als Text)" Value="0" Access="None" />
               <Parameter Id="%AID%_P-%T%920009" Name="NumberSearchResultsToDisplay" ParameterType="%AID%_PT-ValueDpt5" Text="Anzahl angezeigter Resultate" Value="0" Access="None" />
 

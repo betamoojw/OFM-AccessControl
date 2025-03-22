@@ -1608,7 +1608,7 @@ void AccessControl::handleFunctionPropertySearchFingerIdByPerson(uint8_t *data, 
                 // logDebugP("personName: %s", personName);
                 // logIndentDown();
 
-                // we return max. 10 results
+                // we return max. 7 results (31 * 7 = 217 bytes)
                 if (foundCount < 7)
                 {
                     resultData[3 + foundCount * recordLength] = fingerId >> 8;
@@ -1624,7 +1624,7 @@ void AccessControl::handleFunctionPropertySearchFingerIdByPerson(uint8_t *data, 
         }
     }
     
-    resultData[0] = foundCount > 0 ? 0 : 1;
+    resultData[0] = foundCount > 0 ? 0 : 1; 
     resultData[1] = foundTotalCount >> 8;
     resultData[2] = foundTotalCount;
     resultLength = 3 + foundCount * recordLength;
@@ -1895,7 +1895,7 @@ void AccessControl::handleFunctionPropertyResetNfcScanner(uint8_t *data, uint8_t
 
 void AccessControl::handleFunctionPropertySearchTagByNfcId(uint8_t *data, uint8_t *resultData, uint8_t &resultLength)
 {
-    logInfoP("Function property NFC: Search person by NfcId");
+    logInfoP("Function property NFC: Search NFC-Tag by NfcId");
     logIndentUp();
 
     uint16_t nfcId = (data[1] << 8) | data[2];
@@ -1920,11 +1920,11 @@ void AccessControl::handleFunctionPropertySearchTagByNfcId(uint8_t *data, uint8_
         logIndentDown();
 
         resultData[0] = 0;
-        memcpy(resultData + 2, tagUid, 10);
+        memcpy(resultData + 1, tagUid, 10);
         resultLength = 11;
         for (uint8_t i = 0; i < 28; i++)
         {
-            memcpy(resultData + 2 + i, tagName + i, 1);
+            memcpy(resultData + 11 + i, tagName + i, 1);
             resultLength++;
 
             if (tagName[i] == 0) // null termination
@@ -1944,7 +1944,7 @@ void AccessControl::handleFunctionPropertySearchTagByNfcId(uint8_t *data, uint8_
 
 void AccessControl::handleFunctionPropertySearchNfcIdByTag(uint8_t *data, uint8_t *resultData, uint8_t &resultLength)
 {
-    logInfoP("Function property NFC: Search NfcId(s) by person");
+    logInfoP("Function property NFC: Search NfcId(s) by Tag Name");
     logIndentUp();
 
     uint8_t searchTagUid[10] = {};
@@ -1989,17 +1989,17 @@ void AccessControl::handleFunctionPropertySearchNfcIdByTag(uint8_t *data, uint8_
         _nfcStorage.read(storageOffset + 10, tagName, 28);
         if (strcasestr((char *)tagName, searchTagName) != nullptr)
         {
-            logDebugP("Found:");
-            logIndentUp();
-            logDebugP("nfcId: %d", nfcId);
-            logDebugP("tagUid");
-            logHexDebugP(tagUid, 10);
-            logDebugP("tagName: %s", tagName);
-            logIndentDown();
-
-            // we return max. 10 results
-            if (foundCount < 7)
+            // we return max. 6 results (6*40 = 240 bytes)
+            if (foundCount < 6)
             {
+                logDebugP("Found:");
+                logIndentUp();
+                logDebugP("nfcId: %d", nfcId);
+                logDebugP("tagUid");
+                logHexDebugP(tagUid, 10);
+                logDebugP("tagName: %s", tagName);
+                logIndentDown();
+
                 resultData[3 + foundCount * recordLength] = nfcId >> 8;
                 resultData[3 + foundCount * recordLength + 1] = nfcId;
                 memcpy(resultData + 3 + foundCount * recordLength + 2, tagUid, 10);
