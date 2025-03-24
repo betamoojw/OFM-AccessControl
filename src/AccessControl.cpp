@@ -1608,7 +1608,7 @@ void AccessControl::handleFunctionPropertySearchFingerIdByPerson(uint8_t *data, 
                 // logDebugP("personName: %s", personName);
                 // logIndentDown();
 
-                // we return max. 7 results (31 * 7 = 217 bytes)
+                // we return max. 7 results (3 + 31 * 7 = 220 bytes)
                 if (foundCount < 7)
                 {
                     resultData[3 + foundCount * recordLength] = fingerId >> 8;
@@ -1987,10 +1987,10 @@ void AccessControl::handleFunctionPropertySearchNfcIdByTag(uint8_t *data, uint8_
         }
 
         _nfcStorage.read(storageOffset + 10, tagName, 28);
-        if (strcasestr((char *)tagName, searchTagName) != nullptr)
+        if (strcasestr((char *)tagName, searchTagName) != nullptr && tagName[0] != 0)
         {
-            // we return max. 6 results (6*40 = 240 bytes)
-            if (foundCount < 6)
+            // we return max. 5 results (3 + 5 * 40 = 203 bytes)
+            if (foundCount < 5)
             {
                 logDebugP("Found:");
                 logIndentUp();
