@@ -24,7 +24,7 @@ Im folgenden werden Änderungen an dem Dokument erfasst, damit man nicht immer d
 * NEU: Die Applikation wurde in "Zutrittskontrolle" umbenannt.
 * NEU: Die Abfrage von NFC-Tags wird jetzt unterstützt.
 * NEU: Die Applikation nutzt jetzt das neue Modul AccessControl.
-* NEU: Aktionen, die keine Authorisierung erfordern, haben jetzt ein Sperr-KO
+* NEU: Aktionen, die keine Autorisierung erfordern, haben jetzt ein Sperr-KO
 
 14.10.2024: Firmware 0.6.13, Applikation 0.6
 
@@ -164,9 +164,9 @@ Detaileinstellungen erfolgen dann auf passenden Unterseiten, benannt nach der je
 Auswahl der angeschlossenen Fingerprint-Scanner-Hardware. Es wird die folgendes angeboten:
 
 * **Kein Fingerprint**: Wenn keine Fingerprint-Hardware angeschlossen ist
-* **R503** (Standard): Speicherplatz für 200 Finger
-* **R503S**: Speicherplatz für 150 Finger
-* **R503Pro**: Speicherplatz für 1500 Finger
+* **R503** (Standard): Fingerprint-Sensor mit Speicherplatz für 200 Finger
+* **R503S**: Fingerprint-Sensor mit Speicherplatz für 150 Finger
+* **R503Pro**: Fingerprint-Sensor mit Speicherplatz für 1500 Finger
 
 <!-- DOC -->
 #### **NFC Scanner**
@@ -474,6 +474,12 @@ Mit dieser Funktion werden sämtliche gespeicherten NFC-Tags inklusive aller Tag
 
 Aktioen sind die Objekte, die beim Zutrittssystem etwas machen. Aktionen können benannt werden und definieren das Ausgangs-KO und dessen verhalten, wenn diese Aktion ausgelöst wird.
 
+Es gibt 2 Typen von Aktionen:
+
+**Direkte Aktionen**: Solche Aktionen weren direkt durch das Zutrittssystem aufgerufen. Sie haben ein Ausgangs-KO und optional ein Eingangs-KO (z.B. beim Umschalten). Über ein Sperr-KO kann die Aktion gesperrt werden.
+
+**Autorisierungsaktionen**: Diese Aktionen werden nicht direkt vom Zutrittssystem aufgerufen, sondern über ein Aufrufen-KO. Anschließend kann die Aktion durch das Zutrittssystem authorisiert werden. Hier wird also das Zutrittssystem nicht dazu genutzt, die Aktion auszulösen sondern zu bestätigen, dass die Person diese Aktion ausführen darf, dafür also autorisiert ist. Auf diese Weise können mit einem Finger oder einem NFC-Tag viele Aktionen autorisiert werden.Autorisierungsaktionen haben keine eigene Sperre, hier sollte bereits der Aufruf der Aktion durch eine Sperre des Aufrufers verhindert werden. Falls der Aufrufer keine Sperre besitzt, kann diese leicht durch eine TOR-Logik im beiliegenden Logikmodul realisiert werden.
+
 <!-- DOC -->
 ### **Verfügbare Aktionen**
 
@@ -481,19 +487,133 @@ Hier kann hier ausgewählt werden, wie viele Aktionen sichtbar und editierbar si
 
 Die ETS ist auch schneller in der Anzeige, wenn sie weniger (leere) Aktionen darstellen muss. Insofern macht es Sinn, nur so viele Aktionen anzuzeigen, wie man wirklich braucht.
 
-### Autorisierung
-
-Autorisierungsaktionen werden nicht direkt vom Zutrittssystem aufgerufen. Sie werden durch ein KO aufgerufen und durch das Zutrittssystem autorisiert. Hier wird also das Zutrittssystem nicht dazu genutzt, die Aktion auszulösen sondern zu bestätigen, dass die Person diese Aktion ausführen darf, dafür also autorisiert ist. 
-
-Auf diese Weise können mit einem Finger oder einem NFC-Tag viele Aktionen autorisiert werden.
+### **Autorisierung**
 
 <!-- DOC -->
 #### **Warten auf Autorisierung**
 
 Ist eine Autorisierung für eine Aktion angefordert, wird die hier angegebene Zeit auf das Auflegen eines Fingers oder das Vorhalten eines NFC-Tags am Scanner gewartet. Falls die Zeit ohne Autorisierung verstreicht, wird die Aktion abgebrochen.
 
+### **Tabelle der Aktionen**
+
+In der folgenden Tabelle können die vefügbaren Aktionen definiert werden. Pro Zeile erfolgt eine Aktionsdefinition. Im Folgenden werden die einzelnen Felder einer Zeile beschrieben.
+
+#### **Nummer der Aktion**
+
+Die Nummer der Aktion ist nicht eingebbar und enstpricht der Zeilennummer der Tabelle. Diese Nummer wird dazu verwendet, eine Aktion einem Finger oder einem NFC-Tag zuzuordnen.
+
+<!-- DOC -->
+#### **Name der Aktion**
+
+Dies ist ein frei vergebbarer Text, der beschreibt, was die Aktion macht. Dieser Text erscheint auch als Text für die Kommunikationsobjekte der Aktion.
+
+<!-- DOC -->
+#### **Deaktiviert**
+
+Die Spaltenüberschrift ist D*.
+
+Eine Aktion kann über diese Checkbox deaktiviert werden. Die Aktion sendet nichts mehr auf den Bus. Das kann dazu genutzt werden, Aktionen temporär zu deaktivieren oder zu Testzwecken, falls man z.B. nach unabsichtlich ausgelösten Aktionen sucht.
+
+<!-- DOC HelpContext="Autorisierungsaktion" -->
+#### **Autorisierungsaktion**
+
+Die Spaltenüberschrift ist A**.
+
+Wenn diese Checkbox eingeschaltet ist, handelt es sich bei dieser Aktion um eine Autorisierungsaktion.
+
+<!-- DOC -->
+#### **Typ der Aktion**
+
+In der Auswahlbox kann man auswählen, was die Aktion macht. Passend zur Auswahl erscheinen in der Spalte **Weitere Argumente** die für diese Aktion erforderlichen Eingabemöglichkeiten.
+
+##### **aus**
+
+Die Aktion ist ausgeschaltet und hat keine Kommunikationsobjekte und keine weiteren Argumente.
+
+##### **Schalten**
+
+Diese Aktion kann ein EIN- oder ein AUS-Signal auf den Bus senden. Dazu erscheint ein passendes Ausgangs-KO. Ob ein EIN- oder ein AUS-Signal geschickt wird, bestimmt man über die erscheinenden weiteren Argumente.
+
+##### **Umschalten**
+
+Diese Aktion schaltet von EIN auf AUS und umgekehrt. Sie hat ein Ausgangs-KO und ein Eingangs-KO. Das Schaltsignal (Ausgangs-KO) ist immer der Invertierte Wert vom Eingangs-KO. Wird am Eingangs-KO kein Signal vor dem nächsten Schalten empfangen (weil es z.B. nicht mit einer GA verknüpft ist), dann wird der letzte Schaltzustand invertiert gesendet.
+
+##### **Treppenlicht**
+
+Diese Aktion sendet ein EIN- gefolgt von einem AUS-Signal auf das Ausgangs-KO. Die Zeit, die zwischen dem EIN- und AUS-Signal liegt, kann über weitere Argumente eingestellt werden. Falls dieses einfache Treppenlicht nicht ausreicht, kann ein deutlich funktionsreicheres Treppenlicht im beiliegenden Logikmodul genutzt werden.
 
 
+<!-- DOC HelpContext="Finger-Seite" -->
+## **Finger**
+
+Erscheint nur, wenn bei Fingerprint-Scanner eine entscprechende Hardware ausgewählt wurde.
+
+Im oberen Bereich können bereits angelernte Finger und Personen gesucht werden. So kann man überprüfen, welche Finger und Personen schon bekannt sind. 
+
+Diese Funktionalität ist leider vollkommen von der Übertragungs-Infrastruktuktur der ETS abhängig, die wiederum von der Topologie und den verwendeten Schnittstellen und Linienkopplern abhängt. Schlagwort hier ist die APDU des Übertragungsweges (es würde zu weit führen, das hier auszuführen - siehe KNX-User-Forum). Für diese Funktion wird eine APDU vom 220 benötigt. Wenn nur eine kleinere APDU verfügbar ist, sollte die Suche nicht verwendet werden.
+
+Im unteren Bereich können angelernte Finger zu Aktionen zugeordnet werden. Dieser Bereich kann unabhängig von der Übertragungs-Infrastruktur verwendet werden. 
+
+<!-- DOCEND -->
+
+
+### **Zuweisung von Fingern zu Aktionen**
+
+In der folgenden Tabelle könenn angelernte Finger zu Aktionen zugeordnet werden. 
+
+<!-- DOC -->
+#### **Verfügbare Zuordnungen**
+
+Hier wird die Anzahl der sichbaren Zeilen der Zuordnugnstabelle eingestellt. Da die ETS schneller ist, je weniger sie darstellen muss, sollte hier nur die Anzahl der wirklich benötigten Zeilen eingestellt werden.
+
+<!-- DOC -->
+#### **Aktion**
+
+Die Nummer einer definierten Aktion, die zugeordnet werden soll.
+
+<!-- DOC -->
+#### **Finger**
+
+Der angelernte Finger, der dieser Aktion zugeorndet werden soll.
+
+<!-- DOC -->
+#### **Information**
+
+Die Zuordnung kann mit einem beliebigen Text benannt werden. Man kann einen Vorschlagstext generieren lassen, indem man den Button "Info holen" betätigt.
+
+<!-- DOC HelpContext="NFC-Seite" -->
+## **NFC**
+
+Erscheint nur, wenn bei NFC-Scanner eine entscprechende Hardware ausgewählt wurde.
+
+Im oberen Bereich können bereits angelernte NFC-Tags gesucht werden. So kann man überprüfen, welche NFC-Tags schon bekannt sind. 
+
+Diese Suchfunktionalität ist leider vollkommen von der Übertragungs-Infrastruktuktur der ETS abhängig, die wiederum von der Topologie und den verwendeten Schnittstellen und Linienkopplern abhängt. Schlagwort hier ist die APDU des Übertragungsweges (es würde zu weit führen, das hier auszuführen - siehe KNX-User-Forum). Für diese Funktion wird eine APDU vom 203 benötigt. Wenn nur eine kleinere APDU verfügbar ist, sollte die Suche nicht verwendet werden.
+
+Im unteren Bereich können angelernte NFC-Tags zu Aktionen zugeordnet werden. Dieser Bereich kann unabhängig von der Übertragungs-Infrastruktur verwendet werden. 
+
+<!-- DOCEND -->
+
+### **Zuweisung von NFC-Tags zu Aktionen**
+
+In der folgenden Tabelle könenn angelernte Finger zu Aktionen zugeordnet werden. 
+
+#### **Verfügbare Zuordnungen**
+
+Hier wird die Anzahl der sichbaren Zeilen der Zuordnugnstabelle eingestellt. Da die ETS schneller ist, je weniger sie darstellen muss, sollte hier nur die Anzahl der wirklich benötigten Zeilen eingestellt werden.
+
+#### **Aktion**
+
+Die Nummer einer definierten Aktion, die zugeordnet werden soll.
+
+<!-- DOC -->
+#### **Tag**
+
+Der angelernte NFC-Tag, der dieser Aktion zugeorndet werden soll.
+
+#### **Information**
+
+Die Zuordnung kann mit einem beliebigen Text benannt werden. Man kann einen Vorschlagstext generieren lassen, indem man den Button "Info holen" betätigt.
 
 
 

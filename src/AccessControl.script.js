@@ -566,7 +566,7 @@ function ACC_checkNfcAction(device, online, progress, context) {
             progress.setText("NFC: Tag zu NFC ID " + parNfcId.value + " gefunden.");
         
             personNfc = resp[1];
-            for (var i = 1; i < resp.length; ++i) {
+            for (var i = 11; i < resp.length; ++i) {
                 if (resp[i] == 0)
                     break; // null-termination
             

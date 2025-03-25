@@ -62,7 +62,7 @@
               <choose ParamRefId="%AID%_UP-%T%000002_R-%T%00000201">
                 <when test="0 1 2">
                   <!-- Fingerprint Reader -->
-                  <ParameterBlock Id="%AID%_PB-nnn" Name="FingerAction" Text="Finger" Icon="fingerprint" HelpContext="Empty">
+                  <ParameterBlock Id="%AID%_PB-nnn" Name="FingerAction" Text="Finger" Icon="fingerprint" HelpContext="ACC-Finger-Seite">
                     <!-- invisible, but necessary -->
                     <ParameterRefRef RefId="%AID%_P-%T%900007_R-%T%90000701" />
                     <ParameterRefRef RefId="%AID%_P-%T%900008_R-%T%90000801" />
@@ -132,7 +132,7 @@
 
                     <ParameterSeparator Id="%AID%_PS-nnn" Text="" UIHint="HorizontalRuler" />
                     <ParameterSeparator Id="%AID%_PS-nnn" Text="Zuweisung von Fingern zu Aktionen" UIHint="Headline" />
-                    <ParameterRefRef RefId="%AID%_UP-%T%900001_R-%T%90000101" />
+                    <ParameterRefRef RefId="%AID%_UP-%T%900001_R-%T%90000101" HelpContext="%DOC%" />
                     <ParameterBlock Id="%AID%_PB-nnn" Inline="true" Layout="Grid">
                       <Rows>
                         <Row Id="%AID%_PB-nnn_R-1" />

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<?xml-model href="../../Organization/knxprod-support/knx_project_20/knx-editor.xsd" type="application/xml" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<?xml-model href="../../../../Organization/knxprod-support/knx_project_20/knx-editor.xsd" type="application/xml" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <KNX xmlns:op="http://github.com/OpenKNX/OpenKNXproducer" xmlns="http://knx.org/xml/project/20" CreatedBy="KNX MT" ToolVersion="5.1.255.16695">
   <ManufacturerData>
     <Manufacturer RefId="M-00FA">
@@ -52,7 +52,7 @@
             <ChannelIndependentBlock>
               <choose ParamRefId="%AID%_UP-%T%000034_R-%T%00003401">
                 <when test="!=0">
-                  <ParameterBlock Id="%AID%_PB-nnn" Name="NfcAction" Text="NFC" Icon="nfc-variant" HelpContext="Empty">
+                  <ParameterBlock Id="%AID%_PB-nnn" Name="NfcAction" Text="NFC" Icon="nfc-variant" HelpContext="ACC-NFC-Seite" >
                     <!-- invisible, but necessary -->
                     <ParameterRefRef RefId="%AID%_P-%T%920007_R-%T%92000701" />
                     <ParameterRefRef RefId="%AID%_P-%T%920008_R-%T%92000801" />
@@ -118,7 +118,7 @@
 
                     <ParameterSeparator Id="%AID%_PS-nnn" Text="" UIHint="HorizontalRuler" />
                     <ParameterSeparator Id="%AID%_PS-nnn" Text="Zuweisung von NFC-Tags zu Aktionen" UIHint="Headline" />
-                    <ParameterRefRef RefId="%AID%_UP-%T%920001_R-%T%92000101" />
+                    <ParameterRefRef RefId="%AID%_UP-%T%920001_R-%T%92000101" HelpContext="%DOC%" />
                     <ParameterBlock Id="%AID%_PB-nnn" Inline="true" Layout="Grid">
                       <Rows>
                         <Row Id="%AID%_PB-nnn_R-1" />
