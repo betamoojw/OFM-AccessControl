@@ -31,21 +31,29 @@ void AccessControl::setup()
         _channels[i]->setup();
     }
 
-    pinMode(LED_GREEN_PIN, OUTPUT);
-    pinMode(LED_RED_PIN, OUTPUT);
-    digitalWrite(LED_RED_PIN, HIGH);
-
     pinMode(SCANNER_TOUCH_PIN, INPUT_PULLDOWN);
     attachInterrupt(digitalPinToInterrupt(SCANNER_TOUCH_PIN), AccessControl::interruptDisplayTouched, FALLING);
 
-    pinMode(TOUCH_LEFT_PIN, INPUT);
-    pinMode(TOUCH_RIGHT_PIN, INPUT);
-    attachInterrupt(digitalPinToInterrupt(TOUCH_LEFT_PIN), AccessControl::interruptTouchLeft, CHANGE);
-    attachInterrupt(digitalPinToInterrupt(TOUCH_RIGHT_PIN), AccessControl::interruptTouchRight, CHANGE);
+    if (ParamACC_NfcScanner == 1)
+    {
+        pinMode(DIRECT_LED_GREEN_PIN, OUTPUT);
+        pinMode(DIRECT_LED_RED_PIN, OUTPUT);
 
-    digitalWrite(LED_RED_PIN, LOW);
-    digitalWrite(LED_GREEN_PIN, HIGH);
+        pinMode(DIRECT_TOUCH_LEFT_PIN, INPUT);
+        pinMode(DIRECT_TOUCH_RIGHT_PIN, INPUT);
+        attachInterrupt(digitalPinToInterrupt(DIRECT_TOUCH_LEFT_PIN), AccessControl::interruptTouchLeft, CHANGE);
+        attachInterrupt(digitalPinToInterrupt(DIRECT_TOUCH_RIGHT_PIN), AccessControl::interruptTouchRight, CHANGE);
+    }
+    else if (ParamACC_NfcScanner == 2)
+    {
+        openknxGPIOModule.pinMode(EXTERN_TOUCH_LEFT_PIN, INPUT);
+        openknxGPIOModule.pinMode(EXTERN_TOUCH_RIGHT_PIN, INPUT);
+        openknxGPIOModule.pinMode(EXTERN_LED_GREEN_PIN, OUTPUT);
+        openknxGPIOModule.pinMode(EXTERN_LED_RED_PIN, OUTPUT);
+    }
 
+    switchLedRedPower(false);
+    switchLedGreenPower(true);
 
     finger->setLed(Fingerprint::State::Success);
 
@@ -81,9 +89,13 @@ void AccessControl::initNfc(bool testMode)
     logging::enable(logging::source::tagEvents);
 #endif
 
-    NFC_WIRE.setSDA(NFC_SDA_PIN);
-    NFC_WIRE.setSCL(NFC_SCL_PIN);
-    NFC_WIRE.begin();
+    if (ParamACC_NfcScanner == 2)
+    {
+        openknxGPIOModule.pinMode(0x0200, OUTPUT);
+        openknxGPIOModule.digitalWrite(0x0200, LOW);
+        openknxGPIOModule.pinMode(0x0201, OUTPUT);
+        openknxGPIOModule.digitalWrite(0x0201, LOW);
+    }
 
     PN7160Interface::initialize(NFC_IRQ_PIN, NFC_VEN_PIN, NFC_PN7160_ADDR);
     logInfoP("Initialized PN7160.");
@@ -136,6 +148,22 @@ bool AccessControl::switchFingerprintPower(bool on, bool testMode)
 #endif
         return true;
     }
+}
+
+void AccessControl::switchLedGreenPower(bool on)
+{
+    if (ParamACC_NfcScanner == 0)
+        return;
+    
+    openknxGPIOModule.digitalWrite(ParamACC_NfcScanner == 1 ? DIRECT_LED_GREEN_PIN : EXTERN_LED_GREEN_PIN, on ? HIGH : LOW);
+}
+
+void AccessControl::switchLedRedPower(bool on)
+{
+    if (ParamACC_NfcScanner == 0)
+        return;
+    
+    openknxGPIOModule.digitalWrite(ParamACC_NfcScanner == 1 ? DIRECT_LED_RED_PIN : EXTERN_LED_RED_PIN, on ? HIGH : LOW);
 }
 
 void AccessControl::initFingerprintScanner(bool testMode)
@@ -204,12 +232,12 @@ void AccessControl::interruptDisplayTouched()
 
 void AccessControl::interruptTouchLeft()
 {
-    KoACC_TouchPcbButtonLeft.value(digitalRead(TOUCH_LEFT_PIN) == HIGH, DPT_Switch);
+    KoACC_TouchPcbButtonLeft.value(digitalRead(DIRECT_TOUCH_LEFT_PIN) == HIGH, DPT_Switch);
 }
 
 void AccessControl::interruptTouchRight()
 {
-    KoACC_TouchPcbButtonRight.value(digitalRead(TOUCH_RIGHT_PIN) == HIGH, DPT_Switch);
+    KoACC_TouchPcbButtonRight.value(digitalRead(DIRECT_TOUCH_RIGHT_PIN) == HIGH, DPT_Switch);
 }
 
 void AccessControl::loop()
@@ -289,7 +317,7 @@ void AccessControl::loop()
         if (initResetTimer > 0 && delayCheck(initResetTimer, INIT_RESET_TIMEOUT))
         {
             finger->setLed(Fingerprint::State::None);
-            digitalWrite(LED_GREEN_PIN, LOW);
+            switchLedGreenPower(false);
 
             if (ParamACC_ScanMode == 0)
                 switchFingerprintPower(false);
@@ -305,15 +333,15 @@ void AccessControl::loop()
 
         if (resetTouchPcbLedTimer > 0 && delayCheck(resetTouchPcbLedTimer, LED_RESET_TIMEOUT))
         {
-            digitalWrite(LED_GREEN_PIN, LOW);
-            digitalWrite(LED_RED_PIN, LOW);
+            switchLedGreenPower(false);
+            switchLedRedPower(false);
             resetTouchPcbLedTimer = 0;
         }
 
         if (resetTouchPcbLedTimerFast > 0 && delayCheck(resetTouchPcbLedTimerFast, LED_RESET_FAST_TIMEOUT))
         {
-            digitalWrite(LED_GREEN_PIN, LOW);
-            digitalWrite(LED_RED_PIN, LOW);
+            switchLedGreenPower(false);
+            switchLedRedPower(false);
             resetTouchPcbLedTimerFast = 0;
         }
 
@@ -337,6 +365,12 @@ void AccessControl::loop()
         syncRequestedNfcId = 0;
     }
 
+    if (ParamACC_NfcScanner == 2)
+    {
+        KoACC_TouchPcbButtonLeft.value(openknxGPIOModule.digitalRead(EXTERN_TOUCH_LEFT_PIN) == HIGH, DPT_Switch);
+        KoACC_TouchPcbButtonRight.value(openknxGPIOModule.digitalRead(EXTERN_TOUCH_RIGHT_PIN) == HIGH, DPT_Switch);
+    }
+
     processSyncSend();
     loopNfc();
 }
@@ -355,7 +389,7 @@ void AccessControl::loopNfc(bool testMode)
 
             //###ToDo: remote management status feedback
 
-            digitalWrite(LED_RED_PIN, HIGH);
+            switchLedRedPower(true);
             resetTouchPcbLedTimer = delayTimerInit();
 
             enrollNfcStarted = 0;
@@ -365,7 +399,7 @@ void AccessControl::loopNfc(bool testMode)
         if (delayCheck(enrollNfcLedLastChanged, NFC_ENROLL_LED_BLINK_INTERVAL))
         {
             enrollNfcLedOn = !enrollNfcLedOn;
-            digitalWrite(LED_GREEN_PIN, enrollNfcLedOn ? HIGH : LOW);
+            switchLedGreenPower(enrollNfcLedOn ? HIGH : LOW);
 
             enrollNfcLedLastChanged = delayTimerInit();
         }
@@ -417,13 +451,13 @@ void AccessControl::loopNfc(bool testMode)
                 
                         //###ToDo: remote management status feedback
 
-                        digitalWrite(LED_GREEN_PIN, HIGH);
+                        switchLedGreenPower(true);
                     }
                     else
                     {
                         //###ToDo: remote management status feedback
 
-                        digitalWrite(LED_RED_PIN, HIGH);
+                        switchLedRedPower(true);
                     }
 
                     resetTouchPcbLedTimer = delayTimerInit();
@@ -463,7 +497,7 @@ void AccessControl::loopNfc(bool testMode)
                         for (uint16_t i = 0; i < ParamACC_VisibleActions; i++)
                             _channels[i]->resetActionCall();
 
-                        digitalWrite(LED_RED_PIN, HIGH);
+                        switchLedRedPower(true);
                         resetTouchPcbLedTimer = delayTimerInit();
                     }
                 }
@@ -511,7 +545,7 @@ void AccessControl::processNfcScanSuccess(uint16_t foundId, bool external)
     {
         if (!external)
         {
-            digitalWrite(LED_GREEN_PIN, HIGH);
+            switchLedGreenPower(true);
             resetTouchPcbLedTimer = delayTimerInit();
         }
     }
@@ -519,7 +553,7 @@ void AccessControl::processNfcScanSuccess(uint16_t foundId, bool external)
     {
         if (!external)
         {
-            digitalWrite(LED_GREEN_PIN, HIGH);
+            switchLedGreenPower(true);
             resetTouchPcbLedTimerFast = delayTimerInit();
         }
     }
@@ -734,14 +768,14 @@ bool AccessControl::deleteNfc(uint16_t nfcId, bool sync)
             
         //###ToDo: remote management status feedback
 
-        digitalWrite(LED_GREEN_PIN, HIGH);
+        switchLedGreenPower(true);
         logInfoP("NFC tag with ID %d deleted.", nfcId);
     }
     else
     {
         //###ToDo: remote management status feedback
 
-        digitalWrite(LED_RED_PIN, HIGH);
+        switchLedRedPower(true);
         logInfoP("NFC tag with ID %d not found.");
     }
 
@@ -828,9 +862,9 @@ void AccessControl::processInputKoTouchPcbLed(GroupObject &ko)
     bool ledOn = ko.value(DPT_Switch);
     uint16_t asap = ko.asap();
     if (asap == ACC_KoTouchPcbLedRed)
-        digitalWrite(LED_RED_PIN, ledOn ? HIGH : LOW);
+        switchLedRedPower(ledOn ? HIGH : LOW);
     else if (asap == ACC_KoTouchPcbLedGreen)
-        digitalWrite(LED_GREEN_PIN, ledOn ? HIGH : LOW);
+        switchLedGreenPower(ledOn ? HIGH : LOW);
 }
 
 void AccessControl::processInputKoEnrollFinger(GroupObject &ko)
@@ -1892,7 +1926,7 @@ void AccessControl::handleFunctionPropertyResetNfcScanner(uint8_t *data, uint8_t
     }
     _nfcStorage.commit();
 
-    digitalWrite(LED_GREEN_PIN, HIGH);
+    switchLedGreenPower(true);
     resetTouchPcbLedTimer = delayTimerInit();
 
     resultData[0] = 0;
@@ -2127,16 +2161,16 @@ void AccessControl::runTestMode()
     logInfoP("Testing LEDs:");
     logIndentUp();
     logInfoP("Touch buttons red");
-    pinMode(LED_RED_PIN, OUTPUT);
-    digitalWrite(LED_RED_PIN, HIGH);
+    pinMode(DIRECT_LED_RED_PIN, OUTPUT);
+    digitalWrite(DIRECT_LED_RED_PIN, HIGH);
     delay(1000);
-    digitalWrite(LED_RED_PIN, LOW);
+    digitalWrite(DIRECT_LED_RED_PIN, LOW);
 
     logInfoP("Touch buttons green");
-    pinMode(LED_GREEN_PIN, OUTPUT);
-    digitalWrite(LED_GREEN_PIN, HIGH);
+    pinMode(DIRECT_LED_GREEN_PIN, OUTPUT);
+    digitalWrite(DIRECT_LED_GREEN_PIN, HIGH);
     delay(1000);
-    digitalWrite(LED_GREEN_PIN, LOW);
+    digitalWrite(DIRECT_LED_GREEN_PIN, LOW);
     logIndentDown();
 
 #ifdef OPENKNX_SWA_SET_PINS

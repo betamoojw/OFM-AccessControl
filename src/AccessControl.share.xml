@@ -71,7 +71,7 @@
                 <TypeRestriction Base="Value" SizeInBit="2" UIHint="DropDown">
                   <Enumeration Text="Kein NFC" Value="0" Id="%ENID%" />
                   <Enumeration Text="Schaltereinsatz mit NFC" Value="1" Id="%ENID%" />
-                  <!-- <Enumeration Text="Externer NFC-Leser" Value="2" Id="%ENID%" /> -->
+                  <Enumeration Text="Externer NFC-Leser" Value="2" Id="%ENID%" />
                 </TypeRestriction>
               </ParameterType>
               <ParameterType Id="%AID%_PT-FingerprintScanner" Name="FingerprintScanner">

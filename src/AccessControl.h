@@ -2,6 +2,7 @@
 
 #include "OpenKNX.h"
 #include "hardware.h"
+#include "GPIOModule.h"
 #include "Fingerprint.h"
 #include "ActionChannel.h"
 #include "FastCRC.h"
@@ -9,16 +10,6 @@
 #include "pn7160interface/pn7160interface.hpp"
 #include "logging/logging.hpp"
 #include "nci/nci.hpp"
-
-
-#define NFC_WIRE Wire
-#define NFC_PN7160_ADDR 0x28
-#define NFC_SDA_PIN 20
-#define NFC_SCL_PIN 21
-#define NFC_IRQ_PIN 16
-#define NFC_VEN_PIN 17
-#define NFC_DWL_REQ_PIN 23
-
 
 #define INIT_RESET_TIMEOUT 1000
 #define LED_RESET_TIMEOUT 1000
@@ -92,6 +83,8 @@ class AccessControl : public OpenKNX::Module
     static void interruptTouchLeft();
     static void interruptTouchRight();
     bool switchFingerprintPower(bool on, bool testMode = false);
+    void switchLedGreenPower(bool on);
+    void switchLedRedPower(bool on);
     void initFingerprintScanner(bool testMode = false);
     void initFlashFingerprint();
     void initFlashNfc();
