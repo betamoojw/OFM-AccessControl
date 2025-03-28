@@ -95,8 +95,8 @@ class AccessControl : public OpenKNX::Module
     void initFingerprintScanner(bool testMode = false);
     void initFlashFingerprint();
     void initFlashNfc();
-    void initNfc();
-    void loopNfc();
+    void initNfc(bool testMode = false);
+    void loopNfc(bool testMode = false);
     void processFingerScanSuccess(uint16_t location, bool external = false);
     void processNfcScanSuccess(uint16_t nfcId, bool external = false);
     bool enrollFinger(uint16_t location);
@@ -188,6 +188,8 @@ class AccessControl : public OpenKNX::Module
     bool syncReceivePacketReceived[SYNC_BUFFER_SIZE] = {false};
 
     uint32_t readRequestDelay = 0;
+
+    bool testModeNfcFound = false;
 };
 
 extern AccessControl openknxAccessControl;

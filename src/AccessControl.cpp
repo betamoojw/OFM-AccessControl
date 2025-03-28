@@ -63,9 +63,10 @@ void AccessControl::setup()
     logIndentDown();
 }
 
-void AccessControl::initNfc()
+void AccessControl::initNfc(bool testMode)
 {
-    if (ParamACC_NfcScanner == 0)
+    if (!testMode &&
+        ParamACC_NfcScanner == 0)
         return;
 
 #ifdef NCI_DEBUG
@@ -340,9 +341,10 @@ void AccessControl::loop()
     loopNfc();
 }
 
-void AccessControl::loopNfc()
+void AccessControl::loopNfc(bool testMode)
 {
-    if (ParamACC_NfcScanner == 0)
+    if (!testMode &&
+        ParamACC_NfcScanner == 0)
         return;
 
     if (enrollNfcStarted > 0)
@@ -386,83 +388,88 @@ void AccessControl::loopNfc()
             for (uint8_t index = 0; index < uniqueIdLength; index++)
                 logDebugP("0x%02X ", uniqueId[index]);
 
-            if (enrollNfcStarted > 0)
+            if (!testMode)
             {
-                uint32_t storageOffset = 0;
-                uint8_t tagUid[10] = {};
-                for (uint16_t i = 0; i < MAX_NFCS; i++)
+                if (enrollNfcStarted > 0)
                 {
-                    storageOffset = ACC_CalcNfcStorageOffset(i);
-                    _nfcStorage.read(storageOffset, tagUid, 10);
-                    if (!memcmp(tagUid, uniqueId, 10))
+                    uint32_t storageOffset = 0;
+                    uint8_t tagUid[10] = {};
+                    for (uint16_t i = 0; i < MAX_NFCS; i++)
                     {
-                        enrollNfcDuplicateId = i;
-                        logInfoP("Not enrolled as unique tag ID already present in nfcID %u.", enrollNfcDuplicateId);
-                        break;
+                        storageOffset = ACC_CalcNfcStorageOffset(i);
+                        _nfcStorage.read(storageOffset, tagUid, 10);
+                        if (!memcmp(tagUid, uniqueId, 10))
+                        {
+                            enrollNfcDuplicateId = i;
+                            logInfoP("Not enrolled as unique tag ID already present in nfcID %u.", enrollNfcDuplicateId);
+                            break;
+                        }
                     }
-                }
 
-                if (enrollNfcDuplicateId == ACC_ID_INVALID)
-                {
-                    storageOffset = ACC_CalcNfcStorageOffset(enrollNfcId);
-                    logDebugP("storageOffset: %d", storageOffset);
-                    _nfcStorage.write(storageOffset, const_cast<uint8_t*>(uniqueId), uniqueIdLength);
-                    _nfcStorage.commit();
+                    if (enrollNfcDuplicateId == ACC_ID_INVALID)
+                    {
+                        storageOffset = ACC_CalcNfcStorageOffset(enrollNfcId);
+                        logDebugP("storageOffset: %d", storageOffset);
+                        _nfcStorage.write(storageOffset, const_cast<uint8_t*>(uniqueId), uniqueIdLength);
+                        _nfcStorage.commit();
 
-                    logInfoP("Enrolled to nfcID %u.", enrollNfcId);
-            
-                    //###ToDo: remote management status feedback
+                        logInfoP("Enrolled to nfcID %u.", enrollNfcId);
+                
+                        //###ToDo: remote management status feedback
 
-                    digitalWrite(LED_GREEN_PIN, HIGH);
+                        digitalWrite(LED_GREEN_PIN, HIGH);
+                    }
+                    else
+                    {
+                        //###ToDo: remote management status feedback
+
+                        digitalWrite(LED_RED_PIN, HIGH);
+                    }
+
+                    resetTouchPcbLedTimer = delayTimerInit();
+                    enrollNfcStarted = 0;
                 }
                 else
                 {
-                    //###ToDo: remote management status feedback
+                    uint32_t storageOffset = 0;
+                    uint8_t tagUid[10] = {};
+                    bool found = false;
+                    uint16_t foundId = 0;
+                    for (uint16_t nfcId = 0; nfcId < MAX_NFCS; nfcId++)
+                    {
+                        storageOffset = ACC_CalcNfcStorageOffset(nfcId);
+                        _nfcStorage.read(storageOffset, tagUid, 10);
+                        if (!memcmp(tagUid, uniqueId, uniqueIdLength))
+                        {
+                            found = true;
+                            foundId = nfcId;
+                            break;
+                        }
+                    }
 
-                    digitalWrite(LED_RED_PIN, HIGH);
+                    if (found)
+                    {
+                        logDebugP("Tag found (id=%u)", foundId);
+                        processNfcScanSuccess(foundId);
+                    }
+                    else
+                    {
+                        logInfoP("Tag not found");
+                        KoACC_NfcScanSuccess.value(false, DPT_Switch);
+                
+                        sendScanAccessData(SyncType::NFC, false);
+                
+                        // if NFC tag present, but scan failed, reset all authentication action calls
+                        for (uint16_t i = 0; i < ParamACC_VisibleActions; i++)
+                            _channels[i]->resetActionCall();
+
+                        digitalWrite(LED_RED_PIN, HIGH);
+                        resetTouchPcbLedTimer = delayTimerInit();
+                    }
                 }
-
-                resetTouchPcbLedTimer = delayTimerInit();
-                enrollNfcStarted = 0;
             }
             else
-            {
-                uint32_t storageOffset = 0;
-                uint8_t tagUid[10] = {};
-                bool found = false;
-                uint16_t foundId = 0;
-                for (uint16_t nfcId = 0; nfcId < MAX_NFCS; nfcId++)
-                {
-                    storageOffset = ACC_CalcNfcStorageOffset(nfcId);
-                    _nfcStorage.read(storageOffset, tagUid, 10);
-                    if (!memcmp(tagUid, uniqueId, uniqueIdLength))
-                    {
-                        found = true;
-                        foundId = nfcId;
-                        break;
-                    }
-                }
-
-                if (found)
-                {
-                    logDebugP("Tag found (id=%u)", foundId);
-                    processNfcScanSuccess(foundId);
-                }
-                else
-                {
-                    logInfoP("Tag not found");
-                    KoACC_NfcScanSuccess.value(false, DPT_Switch);
-            
-                    sendScanAccessData(SyncType::NFC, false);
-            
-                    // if NFC tag present, but scan failed, reset all authentication action calls
-                    for (uint16_t i = 0; i < ParamACC_VisibleActions; i++)
-                        _channels[i]->resetActionCall();
-
-                    digitalWrite(LED_RED_PIN, HIGH);
-                    resetTouchPcbLedTimer = delayTimerInit();
-                }
-            }
+                testModeNfcFound = true;
 
             logIndentDown();
             break;
@@ -2069,7 +2076,7 @@ bool AccessControl::processCommand(const std::string cmd, bool diagnoseKo)
 {
     bool result = false;
 
-    if (cmd.substr(0, 3) != "ACC" || cmd.length() < 5)
+    if (cmd.substr(0, 3) != "acc" || cmd.length() < 5)
         return result;
 
     if (cmd.length() == 5 && cmd.substr(4, 1) == "h")
@@ -2155,6 +2162,14 @@ void AccessControl::runTestMode()
     }
     logIndentDown();
 #endif
+
+    logInfoP("Waiting for NFC tag:");
+    logIndentUp();
+    initNfc(true);
+    u_int32_t nfcWaitTimer = delayTimerInit();
+    while (!testModeNfcFound && !delayCheck(nfcWaitTimer, 10000))
+        loopNfc(true);
+    logIndentDown();
 
     logInfoP("Testing finished.");
     logIndentDown();
