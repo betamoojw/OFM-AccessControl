@@ -88,7 +88,7 @@ class AccessControl : public OpenKNX::Module
     void initFingerprintScanner(bool testMode = false);
     void initFlashFingerprint();
     void initFlashNfc();
-    void initNfc(bool testMode = false);
+    void initNfc(bool testMode = false, uint8_t testModeNfc = 0);
     void loopNfc(bool testMode = false);
     void processFingerScanSuccess(uint16_t location, bool external = false);
     void processNfcScanSuccess(uint16_t nfcId, bool external = false);
@@ -124,7 +124,7 @@ class AccessControl : public OpenKNX::Module
     void handleFunctionPropertySearchTagByNfcId(uint8_t *data, uint8_t *resultData, uint8_t &resultLength);
     void handleFunctionPropertySearchNfcIdByTag(uint8_t *data, uint8_t *resultData, uint8_t &resultLength);
     static void delayCallback(uint32_t period);
-    void runTestMode();
+    void runTestMode(uint8_t testModeNfc);
 
     FastCRC16 crc16;
     FastCRC32 crc32;

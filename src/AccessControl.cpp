@@ -36,11 +36,11 @@ void AccessControl::setup()
 
     if (ParamACC_NfcScanner == 1)
     {
-        pinMode(DIRECT_LED_GREEN_PIN, OUTPUT);
-        pinMode(DIRECT_LED_RED_PIN, OUTPUT);
+        openknxGPIOModule.pinMode(DIRECT_LED_GREEN_PIN, OUTPUT);
+        openknxGPIOModule.pinMode(DIRECT_LED_RED_PIN, OUTPUT);
 
-        pinMode(DIRECT_TOUCH_LEFT_PIN, INPUT);
-        pinMode(DIRECT_TOUCH_RIGHT_PIN, INPUT);
+        openknxGPIOModule.pinMode(DIRECT_TOUCH_LEFT_PIN, INPUT);
+        openknxGPIOModule.pinMode(DIRECT_TOUCH_RIGHT_PIN, INPUT);
         attachInterrupt(digitalPinToInterrupt(DIRECT_TOUCH_LEFT_PIN), AccessControl::interruptTouchLeft, CHANGE);
         attachInterrupt(digitalPinToInterrupt(DIRECT_TOUCH_RIGHT_PIN), AccessControl::interruptTouchRight, CHANGE);
     }
@@ -71,7 +71,7 @@ void AccessControl::setup()
     logIndentDown();
 }
 
-void AccessControl::initNfc(bool testMode)
+void AccessControl::initNfc(bool testMode, uint8_t testModeNfc)
 {
     if (!testMode &&
         ParamACC_NfcScanner == 0)
@@ -89,7 +89,8 @@ void AccessControl::initNfc(bool testMode)
     logging::enable(logging::source::tagEvents);
 #endif
 
-    if (ParamACC_NfcScanner == 2)
+    if (!testMode && ParamACC_NfcScanner == 2 ||
+        testMode && testModeNfc == 2)
     {
         openknxGPIOModule.pinMode(0x0200, OUTPUT);
         openknxGPIOModule.digitalWrite(0x0200, LOW);
@@ -2145,14 +2146,24 @@ bool AccessControl::processCommand(const std::string cmd, bool diagnoseKo)
 #endif
     else if (cmd.length() == 13 && cmd.substr(4, 9) == "test mode")
     {
-        runTestMode();
+        runTestMode(0);
+        result = true;
+    }
+    else if (cmd.length() == 13 && cmd.substr(4, 9) == "test nfc1")
+    {
+        runTestMode(1);
+        result = true;
+    }
+    else if (cmd.length() == 13 && cmd.substr(4, 9) == "test nfc2")
+    {
+        runTestMode(2);
         result = true;
     }
 
     return result;
 }
 
-void AccessControl::runTestMode()
+void AccessControl::runTestMode(uint8_t testModeNfc)
 {
     logInfoP("Starting test mode");
     logIndentUp();
@@ -2171,17 +2182,27 @@ void AccessControl::runTestMode()
 
     logInfoP("Testing LEDs:");
     logIndentUp();
+
+    if (testModeNfc < 2)
+    {
+        openknxGPIOModule.pinMode(DIRECT_LED_GREEN_PIN, OUTPUT);
+        openknxGPIOModule.pinMode(DIRECT_LED_RED_PIN, OUTPUT);
+    }
+    else
+    {
+        openknxGPIOModule.pinMode(EXTERN_LED_GREEN_PIN, OUTPUT);
+        openknxGPIOModule.pinMode(EXTERN_LED_RED_PIN, OUTPUT);
+    }
+
     logInfoP("Touch buttons red");
-    pinMode(DIRECT_LED_RED_PIN, OUTPUT);
-    digitalWrite(DIRECT_LED_RED_PIN, HIGH);
+    openknxGPIOModule.digitalWrite(testModeNfc < 2 ? DIRECT_LED_RED_PIN : EXTERN_LED_RED_PIN, HIGH);
     delay(1000);
-    digitalWrite(DIRECT_LED_RED_PIN, LOW);
+    openknxGPIOModule.digitalWrite(testModeNfc < 2 ? DIRECT_LED_RED_PIN : EXTERN_LED_RED_PIN, LOW);
 
     logInfoP("Touch buttons green");
-    pinMode(DIRECT_LED_GREEN_PIN, OUTPUT);
-    digitalWrite(DIRECT_LED_GREEN_PIN, HIGH);
+    openknxGPIOModule.digitalWrite(testModeNfc < 2 ? DIRECT_LED_GREEN_PIN : EXTERN_LED_GREEN_PIN, HIGH);
     delay(1000);
-    digitalWrite(DIRECT_LED_GREEN_PIN, LOW);
+    openknxGPIOModule.digitalWrite(testModeNfc < 2 ? DIRECT_LED_GREEN_PIN : EXTERN_LED_GREEN_PIN, LOW);
     logIndentDown();
 
 #ifdef OPENKNX_SWA_SET_PINS
@@ -2208,13 +2229,16 @@ void AccessControl::runTestMode()
     logIndentDown();
 #endif
 
-    logInfoP("Waiting for NFC tag:");
-    logIndentUp();
-    initNfc(true);
-    u_int32_t nfcWaitTimer = delayTimerInit();
-    while (!testModeNfcFound && !delayCheck(nfcWaitTimer, 10000))
-        loopNfc(true);
-    logIndentDown();
+    if (testModeNfc > 0)
+    {
+        logInfoP("Waiting for NFC tag:");
+        logIndentUp();
+        initNfc(true, testModeNfc);
+        u_int32_t nfcWaitTimer = delayTimerInit();
+        while (!testModeNfcFound && !delayCheck(nfcWaitTimer, 10000))
+            loopNfc(true);
+        logIndentDown();
+    }
 
     logInfoP("Testing finished.");
     logIndentDown();
