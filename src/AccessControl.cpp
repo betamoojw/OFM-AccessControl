@@ -232,12 +232,12 @@ void AccessControl::interruptDisplayTouched()
 
 void AccessControl::interruptTouchLeft()
 {
-    KoACC_TouchPcbButtonLeft.value(digitalRead(DIRECT_TOUCH_LEFT_PIN) == HIGH, DPT_Switch);
+    touchLeftTouched = digitalRead(DIRECT_TOUCH_LEFT_PIN) == HIGH;
 }
 
 void AccessControl::interruptTouchRight()
 {
-    KoACC_TouchPcbButtonRight.value(digitalRead(DIRECT_TOUCH_RIGHT_PIN) == HIGH, DPT_Switch);
+    touchRightTouched = digitalRead(DIRECT_TOUCH_RIGHT_PIN) == HIGH;
 }
 
 void AccessControl::loop()
@@ -367,8 +367,19 @@ void AccessControl::loop()
 
     if (ParamACC_NfcScanner == 2)
     {
-        KoACC_TouchPcbButtonLeft.value(openknxGPIOModule.digitalRead(EXTERN_TOUCH_LEFT_PIN) == HIGH, DPT_Switch);
-        KoACC_TouchPcbButtonRight.value(openknxGPIOModule.digitalRead(EXTERN_TOUCH_RIGHT_PIN) == HIGH, DPT_Switch);
+        touchLeftTouched = openknxGPIOModule.digitalRead(EXTERN_TOUCH_LEFT_PIN) == HIGH;
+        touchRightTouched = openknxGPIOModule.digitalRead(EXTERN_TOUCH_RIGHT_PIN) == HIGH;
+    }
+
+    if ((bool)KoACC_TouchPcbButtonLeft.value(DPT_Switch) != touchLeftTouched)
+    {
+        logDebugP("Left touch button touched=%u.", touchLeftTouched);
+        KoACC_TouchPcbButtonLeft.value(touchLeftTouched, DPT_Switch);
+    }
+    if ((bool)KoACC_TouchPcbButtonRight.value(DPT_Switch) != touchRightTouched)
+    {
+        logDebugP("Right touch button touched=%u.", touchRightTouched);
+        KoACC_TouchPcbButtonRight.value(touchRightTouched, DPT_Switch);
     }
 
     processSyncSend();

@@ -153,6 +153,8 @@ class AccessControl : public OpenKNX::Module
     inline static bool delayCallbackActive = false;
 
     inline volatile static bool touched = false;
+    inline volatile static bool touchLeftTouched = false;
+    inline volatile static bool touchRightTouched = false;
     bool isLocked = false;
 
     uint32_t syncIgnoreTimer = 0;
