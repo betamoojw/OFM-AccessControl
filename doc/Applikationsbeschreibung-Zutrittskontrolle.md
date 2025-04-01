@@ -18,6 +18,9 @@ Es gibt eine kleinere Applikationsversion mit bis zu 200 Aktionen/Fingerzuordnun
 
 Im folgenden werden Änderungen an dem Dokument erfasst, damit man nicht immer das Gesamtdokument lesen muss, um Neuerungen zu erfahren.
 
+01.04.2025: Firmware 0.9, Applikation 0.9
+
+* NEU: Externer NFC-Leser is in der Applikation auswählbar und wird jetzt auch von der Firmware unterstützt.
 
 26.02.2025: Firmware 0.8, Applikation 0.8
 
