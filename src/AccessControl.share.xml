@@ -43,8 +43,8 @@
                   <Enumeration Text="Passwort ändern" Value="2" Id="%ENID%" />
                 </TypeRestriction>
               </ParameterType>
-              <ParameterType Id="%AID%_PT-Text16Byte" Name="Text16Byte">
-                <TypeText SizeInBit="128" />
+              <ParameterType Id="%AID%_PT-Text15Byte" Name="Text15Byte">
+                <TypeText SizeInBit="120" />
               </ParameterType>
               <ParameterType Id="%AID%_PT-DataBlock" Name="DataBlock">
                 <TypeText SizeInBit="65536" />
@@ -164,8 +164,8 @@
               <Parameter Id="%AID%_P-%T%000029" Name="DeleteNfcId" ParameterType="%AID%_PT-NfcId" Text="Tag ID" Value="0" />
               <Parameter Id="%AID%_P-%T%000015" Name="ResetScanner" ParameterType="%AID%_PT-OnOffYesNo" Text="Alle Finger löschen?" Value="0" />
               <Parameter Id="%AID%_P-%T%000020" Name="PasswordOption" ParameterType="%AID%_PT-PasswordOption" Text="Passwort" Value="0" />
-              <Parameter Id="%AID%_P-%T%000021" Name="PasswordNew" ParameterType="%AID%_PT-Text16Byte" Text="Neues Passwort" Value="" />
-              <Parameter Id="%AID%_P-%T%000022" Name="PasswordOld" ParameterType="%AID%_PT-Text16Byte" Text="Altes Passwort" Value="" />
+              <Parameter Id="%AID%_P-%T%000021" Name="PasswordNew" ParameterType="%AID%_PT-Text15Byte" Text="Neues Passwort" Value="" />
+              <Parameter Id="%AID%_P-%T%000022" Name="PasswordOld" ParameterType="%AID%_PT-Text15Byte" Text="Altes Passwort" Value="" />
               <Parameter Id="%AID%_P-%T%000023" Name="PasswardAlreadySet" ParameterType="%AID%_PT-OnOffYesNo" Text="Passwort bereits gesetzt" Value="0" Access="None" />
               <Parameter Id="%AID%_P-%T%000024" Name="SyncFingerIdR503" ParameterType="%AID%_PT-FingerIdR503" Text="Finger ID synchronisieren" Value="0" />
               <Parameter Id="%AID%_P-%T%000025" Name="SyncFingerIdR503S" ParameterType="%AID%_PT-FingerIdR503S" Text="Finger ID synchronisieren" Value="0" />
