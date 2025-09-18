@@ -2,7 +2,6 @@
 
 #include "OpenKNX.h"
 #include "hardware.h"
-#include "GPIOModule.h"
 #include "Fingerprint.h"
 #include "ActionChannel.h"
 #include "FastCRC.h"
