@@ -174,23 +174,22 @@
               <Parameter Id="%AID%_P-%T%000035" Name="ResetNfc" ParameterType="%AID%_PT-OnOffYesNo" Text="Alle NFC-Tags löschen?" Value="0" />
               <Parameter Id="%AID%_P-%T%000036" Name="FingerEdit" ParameterType="%AID%_PT-FingerEdit" Text="Finger" Value="0" />
               <Parameter Id="%AID%_P-%T%000037" Name="NfcEdit" ParameterType="%AID%_PT-NfcEdit" Text="NFC-Tag" Value="0" />
-              <Union SizeInBit="48">
+              <Union SizeInBit="56">
                 <Memory CodeSegment="%AID%_RS-04-00000" Offset="0" BitOffset="0" />
                 <Parameter Id="%AID%_UP-%T%000001" Name="VisibleActions" ParameterType="%AID%_PT-FINNumChannels" Offset="0" BitOffset="0" Text="Verfügbare Aktionen" Value="3" SuffixText=" von %N%" />
                 <Parameter Id="%AID%_UP-%T%000008" Name="AuthDelayBase" ParameterType="%AID%_PT-DelayBase" Offset="2" BitOffset="0" Text="Zeitbasis" Value="0" />
                 <Parameter Id="%AID%_UP-%T%000009" Name="AuthDelayTime" ParameterType="%AID%_PT-DelayTime" Offset="2" BitOffset="2" Text="Zeit" Value="5" />
                 <Parameter Id="%AID%_UP-%T%000002" Name="FingerprintScanner" ParameterType="%AID%_PT-FingerprintScanner" Offset="4" BitOffset="0" Text="Fingerprint Scanner" Value="0" />
                 <Parameter Id="%AID%_UP-%T%000010" Name="FingerprintColor" ParameterType="%AID%_PT-FingerprintColor" Offset="4" BitOffset="2" Text="Blinkfarbe während der Autorisierung" Value="2" Access="None" />
-                <Parameter Id="%AID%_UP-%T%000028" Name="ScanMode" ParameterType="%AID%_PT-ScanMode" Offset="4" BitOffset="4" Text="Fingerabfrage" Value="0" />
-                <Parameter Id="%AID%_UP-%T%000034" Name="NfcScanner" ParameterType="%AID%_PT-NfcScanner" Offset="4" BitOffset="5" Text="NFC Scanner" Value="0" />
-                <!-- 1 bits free -->
-                <Parameter Id="%AID%_UP-%T%000011" Name="EnableRawData" Offset="4" BitOffset="0" ParameterType="%AID%_PT-OnOffYesNo" Text="Rohdaten auf den Bus senden" Value="0" />
-                <Parameter Id="%AID%_UP-%T%000012" Name="EnableSync" Offset="4" BitOffset="1" ParameterType="%AID%_PT-OnOffYesNo" Text="Synchronisation mehrerer Geräte" Value="0" />
-                <Parameter Id="%AID%_UP-%T%000013" Name="EnableExternalControl" Offset="4" BitOffset="2" ParameterType="%AID%_PT-OnOffYesNo" Text="Externe Kontrolle ermöglichen" Value="0" />
-                <Parameter Id="%AID%_UP-%T%000014" Name="EnableAccessData" Offset="4" BitOffset="3" ParameterType="%AID%_PT-OnOffYesNo" Text="Zutrittsdaten-KOs aktivieren" Value="0" />
-                <Parameter Id="%AID%_UP-%T%000019" Name="EnableTouchPcb" Offset="4" BitOffset="4" ParameterType="%AID%_PT-OnOffYesNo" Text="Touch-Frontplatine vorhanden" Value="0" />
+                <Parameter Id="%AID%_UP-%T%000028" Name="ScanMode" ParameterType="%AID%_PT-ScanMode" Offset="4" BitOffset="5" Text="Fingerabfrage" Value="0" />
+                <Parameter Id="%AID%_UP-%T%000034" Name="NfcScanner" ParameterType="%AID%_PT-NfcScanner" Offset="4" BitOffset="6" Text="NFC Scanner" Value="0" />
+                <Parameter Id="%AID%_UP-%T%000011" Name="EnableRawData" Offset="5" BitOffset="0" ParameterType="%AID%_PT-OnOffYesNo" Text="Rohdaten auf den Bus senden" Value="0" />
+                <Parameter Id="%AID%_UP-%T%000012" Name="EnableSync" Offset="5" BitOffset="1" ParameterType="%AID%_PT-OnOffYesNo" Text="Synchronisation mehrerer Geräte" Value="0" />
+                <Parameter Id="%AID%_UP-%T%000013" Name="EnableExternalControl" Offset="5" BitOffset="2" ParameterType="%AID%_PT-OnOffYesNo" Text="Externe Kontrolle ermöglichen" Value="0" />
+                <Parameter Id="%AID%_UP-%T%000014" Name="EnableAccessData" Offset="5" BitOffset="3" ParameterType="%AID%_PT-OnOffYesNo" Text="Zutrittsdaten-KOs aktivieren" Value="0" />
+                <Parameter Id="%AID%_UP-%T%000019" Name="EnableTouchPcb" Offset="5" BitOffset="4" ParameterType="%AID%_PT-OnOffYesNo" Text="Touch-Frontplatine vorhanden" Value="0" />
                 <!-- 3 bits free -->
-                <Parameter Id="%AID%_UP-%T%000027" Name="SyncDelay" Offset="5" BitOffset="0" ParameterType="%AID%_PT-SyncDelay" Text="Verzögerung zwischen Sync-Telegrammen" Value="100" />
+                <Parameter Id="%AID%_UP-%T%000027" Name="SyncDelay" Offset="6" BitOffset="0" ParameterType="%AID%_PT-SyncDelay" Text="Verzögerung zwischen Sync-Telegrammen" Value="100" />
               </Union>
             </Parameters>
             <ParameterRefs>
