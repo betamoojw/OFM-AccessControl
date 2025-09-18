@@ -18,6 +18,12 @@ Es gibt eine kleinere Applikationsversion mit bis zu 200 Aktionen/Fingerzuordnun
 
 Im folgenden werden Änderungen an dem Dokument erfasst, damit man nicht immer das Gesamtdokument lesen muss, um Neuerungen zu erfahren.
 
+18.09.2025: Firmware 0.10, Applikation 0.10
+
+* FIX: Rot/Grüne LED sowie Touch-Tasten wurden beim Schaltereinsatz ohne NFC nicht erkannt.
+* FIX: Partielle Parameterüberlagerung in ETS konnte zu Problemen bei aktivierten Zusatzfunktionsoptionen in der ETS führen.
+* FIX: Die Fingerprint-Scanner-Passwortlänge ist nun im ETS-UI auf 15 Zeichen (statt wie bisher 16) beschränkt, konsistent mit der firmware-seitigen Beschränkung auf 15 Zeichen.
+
 01.04.2025: Firmware 0.9, Applikation 0.9
 
 * NEU: Externer NFC-Leser is in der Applikation auswählbar und wird jetzt auch von der Firmware unterstützt.
