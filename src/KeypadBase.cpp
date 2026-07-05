@@ -126,12 +126,12 @@ void KeypadBase::setFeedback(FeedbackType feedbackType)
         switch (feedbackType)
         {
             case FeedbackType::Kepress:
-                openknxFeedback.setBuzzer(true, false, 100);
+                openknxFeedback.setBuzzer(true, 100UL);
                 break;
             case FeedbackType::Failed:
             case FeedbackType::CodeUnknown:
             case FeedbackType::PauseExceeded:
-                openknxFeedback.setBuzzer(true, false, 1000);
+                openknxFeedback.setBuzzer(true, 1000UL);
                 break;
             // ToDo:
             // add Buzzer Feedback for success and
