@@ -125,17 +125,28 @@ void KeypadBase::setFeedback(FeedbackType feedbackType)
     {
         switch (feedbackType)
         {
+            case FeedbackType::ButtonPress:
             case FeedbackType::Kepress:
+                // signal feedback for the deteceted keypress "beep"
                 openknxFeedback.setBuzzer(true, 100UL);
                 break;
             case FeedbackType::Failed:
             case FeedbackType::CodeUnknown:
+            case FeedbackType::CodeDeleted:
             case FeedbackType::PauseExceeded:
+            case FeedbackType::ActionNotFound:
+                // signal error state: "beep", "beep", "beep", "beep"
+                openknxFeedback.setBuzzer({{1500, 200, 200}, {1500, 200, 200}, {1500, 200, 200}, {1500, 200, 200}});
+                break;
+            case FeedbackType::Ok:
+            case FeedbackType::ActionOk:
+                // signal success "beeeeeeeeeeeep"
                 openknxFeedback.setBuzzer(true, 1000UL);
                 break;
-            // ToDo:
-            // add Buzzer Feedback for success and
-            // use Beep-Codes to differentiate between different status => OFM-Feedback change neccessary
+            case FeedbackType::WaitForCode:
+            case FeedbackType::Off:
+                // do Nothing
+                break;
         }
     }
 }
