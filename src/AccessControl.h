@@ -85,6 +85,13 @@
 // the same safety net for the other direction: a finger broadcast which never gets the scanner must
 // not stay armed forever, that would block every later sync send behind it as well.
 #define SYNC_SEND_START_TIMEOUT 90000
+// safety net for an incoming broadcast which never completes (a sender which is power cycled or
+// reprogrammed mid transfer, packets lost on the bus). It is refreshed on every received packet, so it
+// only has to cover the gap between two packets of the same broadcast, not the whole transfer: the
+// sender paces them with its own ParamACC_SyncDelay, whose parameter type allows at most 255 ms. Ten
+// times that maximum, rounded up to a 5 s floor, leaves room for bus retransmissions and for a sender
+// whose loop is busy with a flash commit, while still freeing the sync path within a few seconds.
+#define SYNC_RECEIVE_PACKET_TIMEOUT 5000
 
 #ifdef SCANNER_PWR_PIN
   #define FINGER_PWR_ON    SCANNER_PWR_PIN_ACTIVE_ON == HIGH ? HIGH : LOW
@@ -418,6 +425,9 @@ class AccessControl : public OpenKNX::Module
     uint16_t syncRequestedKeyId = 0;
 
     bool syncReceiving = false;
+    // armed by the control packet and refreshed by every packet of the transfer, cleared as soon as the
+    // reception has ended (stored, queued for the template import, or failed); see the timeout in loop()
+    uint32_t syncReceiveLastPacketTimer = 0;
     SyncType syncReceiveType;
     uint16_t syncReceiveSyncId = 0;
     uint8_t syncReceiveBuffer[SYNC_BUFFER_SIZE];

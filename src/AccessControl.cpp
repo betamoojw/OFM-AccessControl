@@ -586,6 +586,30 @@ void AccessControl::loop()
             _channels[i]->loop();
     }
 
+    // absolute bound for an incoming broadcast which never completes: a sender which is power cycled or
+    // reprogrammed mid transfer simply stops sending data packets, and without this the assembly state
+    // would keep the whole sync path blocked until the next control packet happens to arrive. Deliberately
+    // outside the lock gate and in front of the export triggers below, so a recovered device can send its
+    // own pending broadcast in the very same pass. A reception which reached the template import is
+    // bounded by SYNC_IMPORT_START_TIMEOUT instead, hence the two import flags.
+    if (syncReceiveLastPacketTimer > 0 && syncReceiving && !syncImportPending && !syncImportActive &&
+        delayCheck(syncReceiveLastPacketTimer, SYNC_RECEIVE_PACKET_TIMEOUT))
+    {
+        logWarningP("Sync-Receive (syncType=%u): aborted, no further packet within %u ms (%u/%u packets received)",
+                    syncReceiveType, (uint32_t)SYNC_RECEIVE_PACKET_TIMEOUT, syncReceivePacketReceivedCount, syncReceivePacketCount);
+
+        // only a finger transfer has a ring LED to report on; the assembly state itself is dropped for
+        // every type, exactly like a failed checksum does
+        if (syncReceiveType == SyncType::FINGER)
+        {
+            finger.setLed(FingerprintInterface::Failed);
+            resetFingerLedTimer = delayTimerInit();
+        }
+
+        syncReceiving = false;
+        syncReceiveLastPacketTimer = 0;
+    }
+
     // the sync export triggers. They sit after the enrollment trigger and before the scan pipeline so
     // that the arbiter hands the scanner out in the priority order documented above. startSyncSend()
     // only reports whether the request was consumed - a scanner which is owned by another activity or
@@ -608,9 +632,18 @@ void AccessControl::loop()
         }
     }
 
-    // known gap, deliberately left as it is: there is no trigger for syncRequestedKeyTimer/-Id, so the
-    // two ETS handlers which arm them (change/sync keypad code) never broadcast anything. A keypad
-    // broadcast needs no scanner at all, so it is unrelated to the scanner pipeline above.
+    // the keypad broadcast, armed by the two ETS handlers (change/sync keypad code). Like the NFC one
+    // it is pure flash plus compression and needs no scanner at all, so startSyncSend() only ever
+    // defers it while another sync is still in flight - which is exactly the retry the return value
+    // asks for.
+    if (syncRequestedKeyTimer > 0 && delayCheck(syncRequestedKeyTimer, SYNC_AFTER_ENROLL_DELAY))
+    {
+        if (startSyncSend(SyncType::KEY, syncRequestedKeyId))
+        {
+            syncRequestedKeyTimer = 0;
+            syncRequestedKeyId = 0;
+        }
+    }
 
     // the queued maintenance operations. They sit behind the import, the enrollment and the export
     // triggers and in front of the scan pipeline (import > enroll > export > maintenance > scan >
@@ -2419,6 +2452,11 @@ void AccessControl::processSyncReceive(uint8_t* data)
     
     if (data[0] == 0) // sequence number
     {
+        // a control packet always ends whatever was being assembled before (the branches below either
+        // start a new assembly or handle a delete), so the reception timeout is disarmed here and only
+        // re-armed by the three "new record" types
+        syncReceiveLastPacketTimer = 0;
+
         uint16_t syncDeleteFingerId;
         uint16_t syncDeleteNfcId;
         uint16_t syncDeleteKeyId;
@@ -2461,6 +2499,7 @@ void AccessControl::processSyncReceive(uint8_t* data)
                 syncReceivePacketReceived[0] = true;
                 syncReceivePacketReceivedCount = 1;
                 syncReceiving = true;
+                syncReceiveLastPacketTimer = delayTimerInit();
 
                 return;
             case 1: // delete finger
@@ -2523,6 +2562,9 @@ void AccessControl::processSyncReceive(uint8_t* data)
         return;
     }
 
+    // any packet of the running transfer proves the sender is still alive, a repeated one included
+    syncReceiveLastPacketTimer = delayTimerInit();
+
     uint8_t sequenceNo = data[0];
     if (syncReceivePacketReceived[sequenceNo])
     {
@@ -2546,6 +2588,13 @@ void AccessControl::processSyncReceive(uint8_t* data)
             if (!switchFingerprintPower(true))
             {
                 logErrorP("Sync-Receive (syncType=%u): powering scanner on failed", syncReceiveType);
+
+                // the payload is complete but unusable without a scanner, so the reception ends here.
+                // No LED: the ring is untouched in this path (the "Busy" below is only reached with a
+                // scanner which is coming up), and a scanner which is off or disabled by ETS cannot
+                // show anything anyway.
+                syncReceiving = false;
+                syncReceiveLastPacketTimer = 0;
                 return;
             }
 
@@ -2557,9 +2606,9 @@ void AccessControl::processSyncReceive(uint8_t* data)
         // the group object callback, so the warning is suppressed for this pass
         openknx.common.skipLooptimeWarning();
 
-        // known behaviour, deliberately left as it is: the two failure returns below leave syncReceiving
-        // true, so the sync path keeps ignoring traffic until the next control packet arrives (which
-        // resets the whole assembly state anyway).
+        // both failure returns below end the reception: the assembly state is dropped so the device is
+        // receptive again right away and, above all, its own broadcasts are not suppressed any more.
+        // Neither of them has reached syncImportPending, so no queued import can be cut short here.
         uint16_t checksum = crc16.ccitt(syncReceiveBuffer, syncReceiveBufferLength);
         if (syncReceiveBufferChecksum == checksum)
             logDebugP("Sync-Receive (syncType=%u): finished (checksum=%u)", syncReceiveType, syncReceiveBufferChecksum);
@@ -2573,6 +2622,8 @@ void AccessControl::processSyncReceive(uint8_t* data)
                 resetFingerLedTimer = delayTimerInit();
             }
 
+            syncReceiving = false;
+            syncReceiveLastPacketTimer = 0;
             return;
         }
 
@@ -2590,6 +2641,8 @@ void AccessControl::processSyncReceive(uint8_t* data)
                 resetFingerLedTimer = delayTimerInit();
             }
 
+            syncReceiving = false;
+            syncReceiveLastPacketTimer = 0;
             return;
         }
 
@@ -2604,6 +2657,8 @@ void AccessControl::processSyncReceive(uint8_t* data)
                 // transfer and the sync path keeps ignoring incoming traffic meanwhile.
                 syncImportPending = true;
                 syncImportPendingTimer = delayTimerInit();
+                // the transfer itself is complete; from here on SYNC_IMPORT_START_TIMEOUT is the bound
+                syncReceiveLastPacketTimer = 0;
                 return;
             case SyncType::NFC:
                 storageOffset = ACC_CalcNfcStorageOffset(syncReceiveSyncId);
@@ -2619,6 +2674,7 @@ void AccessControl::processSyncReceive(uint8_t* data)
 
         logInfoP("Sync-Receive (syncType=%u): data stored", syncReceiveType);
         syncReceiving = false;
+        syncReceiveLastPacketTimer = 0;
     }
 }
 
