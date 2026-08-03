@@ -1,4 +1,3 @@
-#include "Fingerprint.h"
 #include "OpenKNX.h"
 
 class ActionChannel : public OpenKNX::Channel

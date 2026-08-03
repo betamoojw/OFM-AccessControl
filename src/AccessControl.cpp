@@ -1,10 +1,10 @@
 #include "AccessControl.h"
+#include "FingerprintInterface.h"
 #include "I2CDev.h"
 #include "KeypadEmpty.h"
 #include "KeypadForGira.h"
 #include "KeypadMatrix3x4.h"
 
-Fingerprint *AccessControl::finger = nullptr;
 KeypadBase *AccessControl::keypadBase = nullptr;
 
 const std::string AccessControl::name()
@@ -28,9 +28,11 @@ void AccessControl::setup()
 
 #ifdef SCANNER_PWR_PIN
     pinMode(SCANNER_PWR_PIN, OUTPUT);
-#endif    
-    if (switchFingerprintPower(true))
-        finger->logSystemParameters();
+#endif
+    finger.init();
+    // the bring-up runs asynchronously: the system parameter dump and the boot LED are done by
+    // onFingerprintReady() as soon as it publishes the result
+    switchFingerprintPower(true);
 
     for (uint16_t i = 0; i < ParamACC_VisibleActions; i++)
     {
@@ -63,10 +65,8 @@ void AccessControl::setup()
     switchLedRedPower(false);
     switchLedGreenPower(true);
 
-    finger->setLed(Fingerprint::State::Success);
-
     KoACC_FingerLedRingColor.valueNoSend((uint8_t)0, Dpt(5, 10));
-    KoACC_FingerLedRingControl.valueNoSend((uint8_t)FINGERPRINT_LED_OFF, Dpt(5, 10));
+    KoACC_FingerLedRingControl.valueNoSend((uint8_t)FpLedControl::Off, Dpt(5, 10));
     KoACC_FingerLedRingSpeed.valueNoSend((uint8_t)0, Dpt(5, 10));
     KoACC_FingerLedRingCount.valueNoSend((uint8_t)0, Dpt(5, 10));
 
@@ -96,19 +96,19 @@ void AccessControl::setup()
     logIndentDown();
 }
 
-// static 
 void AccessControl::dispatchAuthAction(bool started) {
     // this is called each time an auth-action is started and should dispatch this to all
     // auth hardware to visualize auth waiting state
-    if (started) 
+    // the LED goes into the drivers latch, which is flushed at the next command boundary
+    if (started)
     {
-        finger->setLed(Fingerprint::State::WaitForFinger);
+        finger.setLed(FingerprintInterface::WaitForFinger);
         keypadBase->setBackgroundLed(255);
         keypadBase->setFeedback(KeypadBase::FeedbackType::WaitForCode);
-    } 
+    }
     else
     {
-        finger->setLed(Fingerprint::State::None);
+        finger.setLed(FingerprintInterface::None);
         keypadBase->setFeedback(KeypadBase::FeedbackType::Off);
     }
 
@@ -160,41 +160,169 @@ bool AccessControl::switchFingerprintPower(bool on, bool testMode)
 
     if (on)
     {
-        if (finger != nullptr)
+        // a running or already finished bring-up is never repeated
+        if (fpPower == FpPowerState::Ready || fpPower == FpPowerState::Booting)
         {
             logDebugP("Fingerprint power already on");
             return true;
         }
 
+        if (!testMode &&
+            ParamACC_FingerprintScanner == 3)
+        {
+            // "Kein Fingerprint": no power, no UART traffic at all; every fingerprint operation
+            // degrades exactly like it does with a dead scanner because the driver never leaves its
+            // Off bring-up state, so isReady() stays false and the cached getters answer empty
+            if (!fpScannerDisabled)
+            {
+                fpScannerDisabled = true;
+                logInfoP("Fingerprint scanner disabled by ETS (no fingerprint scanner), skipping bring-up");
+                KoACC_FingerScannerStatus.value(false, DPT_Switch);
+            }
+
+            return false;
+        }
+
+        uint8_t scannerType = ParamACC_FingerprintScanner;
+        FpModel model = scannerType == 2 ? FpModel::R503Pro : FpModel::R503;
+        uint32_t scannerPassword = testMode ? 0 : _fingerprintStorage.readInt(FLASH_FINGER_SCANNER_PASSWORD_OFFSET);
+        logDebugP("Initialize scanner (ETS type %u, model %s) with password: %u", scannerType, fpModelText(model), scannerPassword);
+
+        finger.setModel(model);
+        finger.setPassword(scannerPassword);
+        finger.setReadyCallback([this](bool ready) { onFingerprintReady(ready); });
+
 #ifdef SCANNER_PWR_PIN
         digitalWrite(SCANNER_PWR_PIN, FINGER_PWR_ON);
 #endif
-        initFingerprintScanner(testMode);
 
         logInfoP("Fingerprint start");
-        bool success = finger->start();
+        fpPowerTestMode = testMode;
+        fpPower = FpPowerState::Booting;
+        if (!finger.powerOn())
+        {
+            onFingerprintReady(false);
+            return false;
+        }
 
-        if (!testMode)
-            KoACC_FingerScannerStatus.value(success, DPT_Switch);
-        
-        return success;
+        // the bring-up itself is driven by finger.loop() from loop(); true means "power is applied
+        // and the bring-up is under way", not "the scanner is ready"
+        return true;
     }
     else
     {
-        if (finger == nullptr)
+        if (fpPower == FpPowerState::Off)
         {
             logDebugP("Fingerprint power already off");
             return true;
         }
 
-        finger->close();
-        finger = nullptr;
+        // the driver drops the UART, releases the TX pin and cuts the power pin itself; an operation
+        // which is still in flight is aborted from its own loop() so no callback fires re-entrantly
+        finger.powerOff();
+        fpPower = FpPowerState::Off;
 
 #ifdef SCANNER_PWR_PIN
         digitalWrite(SCANNER_PWR_PIN, FINGER_PWR_OFF);
 #endif
         return true;
     }
+}
+
+// the only place which publishes the result of a bring-up; it is called from finger.loop() and
+// must therefore only set flags, group objects and LEDs - never start another scanner operation
+void AccessControl::onFingerprintReady(bool ready)
+{
+    // the boot flash belongs to the bring-up which runs out of setup(); every later one (a Fault
+    // retry, the test mode exit) must not produce it, so the latch is consumed here no matter how
+    // this bring-up ended
+    bool bootLedPending = initBootLedPending;
+    initBootLedPending = false;
+
+    if (!ready)
+    {
+        fpPower = FpPowerState::Failed;
+
+        // the driver already logged the reason (no answer, wrong password, ...)
+        logErrorP("Fingerprint scanner not found!");
+
+        if (!fpPowerTestMode)
+            KoACC_FingerScannerStatus.value(false, DPT_Switch);
+
+        return;
+    }
+
+    fpPower = FpPowerState::Ready;
+
+    logInfoP("Found fingerprint sensor!");
+
+    if (!fpPowerTestMode)
+    {
+        KoACC_FingerScannerStatus.value(true, DPT_Switch);
+        // the parameter dump walks the whole index cache (and lists every stored location in a debug
+        // build), which does not fit into the loop time budget; it runs once per bring-up
+        openknx.common.skipLooptimeWarning();
+        // in test mode the sequencer dumps the parameters itself
+        finger.logSystemParameters();
+    }
+
+    // LED commands are latched inside the driver and flushed now that it is ready
+    if (isLocked)
+        finger.setLed(FingerprintInterface::Locked);
+    else if (bootLedPending)
+    {
+        finger.setLed(FingerprintInterface::Success); // boot flash, cleared by initResetTimer
+
+        // a bring-up which outlasted the initial window (several VfyPwd attempts) meets an already
+        // cleared initResetTimer, so it is re-armed and the flash is really shown and cleared
+        // a second later. Letting the reset block run a second time is harmless: LED None, green LED
+        // off and - in touch mode - a switchFingerprintPower(false) which is a no-op.
+        if (initResetTimer == 0)
+            initResetTimer = delayTimerInit();
+    }
+}
+
+// The scanner driver executes one operation at a time; the arbiter makes sure that only one
+// module activity ever holds it. An activity acquires it before it starts its first driver
+// operation and releases it when its last one is through.
+bool AccessControl::arbiterAcquire(FpOwner who)
+{
+    if (fpOwner != FpOwner::None)
+        return false;
+
+    // the console test mode is the one activity which claims the scanner before it is up - it
+    // drives the bring-up itself (the device may not even be configured) and is a manual, exclusive
+    // operation, so only a foreign owner can keep it waiting
+    if (who == FpOwner::Test)
+    {
+        fpOwner = who;
+        return true;
+    }
+
+    // no operation is ever started before the bring-up published a ready scanner
+    if (fpPower != FpPowerState::Ready)
+        return false;
+
+    // a foreign operation may still be in flight (bring-up, health check)
+    if (finger.isBusy())
+        return false;
+
+    fpOwner = who;
+    return true;
+}
+
+void AccessControl::arbiterRelease(FpOwner who)
+{
+    // a mismatch is a bookkeeping bug of the caller and never clears the ownership -
+    // stealing it from the activity which really holds it would let two of them drive the single
+    // flight driver at the same time, which is exactly what the arbiter exists to prevent
+    if (fpOwner != who)
+    {
+        logErrorP("Scanner released by owner %u although owner %u holds it", (uint8_t)who, (uint8_t)fpOwner);
+        return;
+    }
+
+    fpOwner = FpOwner::None;
 }
 
 void AccessControl::switchLedGreenPower(bool on)
@@ -219,13 +347,6 @@ void AccessControl::switchLedRedPower(bool on)
     openknx.gpio.digitalWrite(direct ? DIRECT_LED_RED_PIN : EXTERN_LED_RED_PIN, on ? HIGH : LOW);
     
     logDebugP("Switch LED red power: %u", on);
-}
-
-void AccessControl::initFingerprintScanner(bool testMode)
-{
-    uint32_t scannerPassword = testMode ? 0 : _fingerprintStorage.readInt(FLASH_FINGER_SCANNER_PASSWORD_OFFSET);
-    logDebugP("Initialize scanner with password: %u", scannerPassword);
-    finger = new Fingerprint(AccessControl::delayCallback, scannerPassword);
 }
 
 void AccessControl::initFlashFingerprint()
@@ -321,72 +442,101 @@ void AccessControl::interruptTouchRight()
     touchRightTouched = digitalRead(DIRECT_TOUCH_RIGHT_PIN) == HIGH;
 }
 
+// The framework calls this on every pass, the no-argument loop() below only while knx.configured()
+// is true. Everything which has to work on an unconfigured device lives here: the scanner driver
+// itself, the "acc fpi test" diagnostics and the console test mode sequencer.
+void AccessControl::loop(bool configured)
+{
+    // drives the asynchronous parts of the scanner (bring-up, scan, maintenance, health check) and
+    // fires their callbacks
+    finger.loop();
+
+    // the test mode owns the scanner, the LEDs, the relay, the NFC reader and the keypad, so the
+    // productive pipeline stays out of its way for the whole run
+    if (testModeStep > 0)
+    {
+        processTestMode();
+        return;
+    }
+
+    // the scanner diagnostics run alongside the productive pipeline - exclusive access to the driver
+    // is granted by the ownership arbiter (FpOwner::Test), not by suppressing the pipeline
+    if (fpiTestStep > 0)
+        processFingerprintTest();
+
+    if (configured)
+        loop();
+}
+
 void AccessControl::loop()
 {
-    if (delayCallbackActive)
-        return;
+    // a lock which arrives while a scan is in flight must not keep the scanner owned: its result is
+    // discarded and the arbiter handed back. The removal wait only owns the scanner while one of its
+    // probes is in flight, so "scanState != Idle" does not imply ownership - without ownership there
+    // is nothing of ours in flight and the state can be dropped right away, and the arbiter is only
+    // touched when we really hold it.
+    if (isLocked &&
+        scanState != ScanState::Idle &&
+        (fpOwner != FpOwner::Scan || scanDone || !finger.isBusy()))
+    {
+        logDebugP("Scan dropped, module locked");
+        scanDone = false;
+        scanState = ScanState::Idle;
+        scanRemoveProbing = false;
+        if (fpOwner == FpOwner::Scan)
+            arbiterRelease(FpOwner::Scan);
+    }
+
+    // the start timeout of an armed enroll request is evaluated outside the lock gate: a request which
+    // was armed while the module is locked (ETS function property or group object - both are processed
+    // while locked) never reaches the trigger below, so without this its timer would stay armed
+    // forever and the ETS wait poll would never terminate. Only the timeout lives here, the
+    // enrollment itself is started exclusively while the module is unlocked.
+    if (enrollRequestedFingerTimer > 0 && !enrollActive && !enrollDone &&
+        delayCheck(enrollRequestedFingerTimer, ENROLL_START_TIMEOUT))
+    {
+        logInfoP("Enroll request:");
+        logIndentUp();
+        logInfoP("Scanner did not become available (locked=%u, owner=%u, power=%u).", isLocked, (uint8_t)fpOwner, (uint8_t)fpPower);
+        logIndentDown();
+
+        // the finalization below owns all the bookkeeping (log line, request fields, LED timer)
+        enrollActiveLocation = enrollRequestedFingerLocation;
+        enrollResult = FpStatus::ErrBusy;
+        enrollSuccess = false;
+        enrollDone = true;
+    }
+
+    // the finalization of an asynchronous enrollment must run even while the module is locked: a lock
+    // which arrives mid enroll lets the running composite finish, and skipping the finalization would
+    // leak enrollActive and the scanner ownership
+    processEnrollResult();
+
+    // the same holds for the two asynchronous sync template transfers. Their finalization writes
+    // flash and group objects, resets the LEDs and hands the scanner back, so it must never be gated
+    // behind the lock either.
+    processSyncExportResult();
+    processSyncImportResult();
+
+    // and for the queued maintenance operations, whose finalization writes flash (the new scanner
+    // password), sends the delete sync broadcast, logs and hands the scanner back
+    processMaintenanceResult();
+
+    // highest priority scanner activity. The priority order (SyncReceive import > Enroll > SyncSend
+    // export > Maintenance > Scan > HealthCheck) is realized through the order of the triggers in this
+    // loop. A received template also keeps the whole sync path blocked while it waits, so it goes
+    // first.
+    processSyncImportStart();
 
     if (!isLocked)
     {
-        if (ParamACC_ScanMode == 0)
+        if (enrollRequestedFingerTimer > 0 && delayCheck(enrollRequestedFingerTimer, ENROLL_REQUEST_DELAY) &&
+            !enrollActive)
         {
-            if (touched)
-            {
-                logInfoP("Touched");
-                KoACC_FingerTouched.value(true, DPT_Switch);
-
-                if (switchFingerprintPower(true))
-                {
-                    unsigned long captureStart = delayTimerInit();
-                    while (!delayCheck(captureStart, CAPTURE_RETRIES_TOUCH_TIMEOUT))
-                    {
-                        if (searchForFinger())
-                            break;
-                    }
-                }
-
-                touched = false;
-            }
-            else
-            {
-                if (KoACC_FingerTouched.value(DPT_Switch) &&
-                    !finger->hasFinger())
-                {
-                    KoACC_FingerTouched.value(false, DPT_Switch);
-                    shutdownSensorTimer = delayTimerInit();
-                }
-            }
-        }
-        else if (searchForFingerDelayTimer == 0 || delayCheck(searchForFingerDelayTimer, 100))
-        {
-            searchForFinger();
-            searchForFingerDelayTimer = delayTimerInit();
-        }
-
-        if (enrollRequestedFingerTimer > 0 and delayCheck(enrollRequestedFingerTimer, ENROLL_REQUEST_DELAY))
-        {
-            bool success = enrollFinger(enrollRequestedFingerLocation);
-            if (success)
-            {
-                syncRequestedFingerId = enrollRequestedFingerLocation;
-                syncRequestedFingerTimer = delayTimerInit();
-            }
-
-            enrollRequestedFingerTimer = 0;
-            enrollRequestedFingerLocation = 0;
-        }
-
-        if (checkSensorTimer > 0 && delayCheck(checkSensorTimer, CHECK_SENSOR_DELAY))
-        {
-            bool currentStatus = KoACC_FingerScannerStatus.value(DPT_Switch);
-            bool success = finger->checkSensor();
-            if (currentStatus != success)
-            {
-                KoACC_FingerScannerStatus.value(success, DPT_Switch);
-                logInfoP("Check scanner status: %u", success);
-            }
-
-            checkSensorTimer = delayTimerInit();
+            // the request timer stays armed for the whole enrollment (the ETS wait poll reads it)
+            // and also while the scanner is still owned by another activity, so the trigger simply
+            // re-fires on the next pass
+            startEnrollFinger(enrollRequestedFingerLocation);
         }
 
         if (shutdownSensorTimer > 0 && delayCheck(shutdownSensorTimer, SHUTDOWN_SENSOR_DELAY))
@@ -397,7 +547,7 @@ void AccessControl::loop()
 
         if (initResetTimer > 0 && delayCheck(initResetTimer, INIT_RESET_TIMEOUT))
         {
-            finger->setLed(Fingerprint::State::None);
+            finger.setLed(FingerprintInterface::None);
             switchLedGreenPower(false);
 
             if (ParamACC_ScanMode == 0)
@@ -406,7 +556,13 @@ void AccessControl::loop()
             initResetTimer = 0;
         }
 
-        if (resetFingerLedTimer > 0 && delayCheck(resetFingerLedTimer, LED_RESET_TIMEOUT))
+        // a timer which is still armed from the scan before must not overwrite the LED sequence of a
+        // running enrollment, template transfer or maintenance operation: they all show "Busy" for
+        // their whole run and re-arm the timer in their own finalization. syncImportPending belongs
+        // into the set as well - a received template which waits for the scanner already shows "Busy".
+        if (resetFingerLedTimer > 0 && !enrollActive && !syncExportActive && !syncImportPending &&
+            !syncImportActive && !maintActive &&
+            delayCheck(resetFingerLedTimer, LED_RESET_TIMEOUT))
         {
             resetRingLed();
             resetFingerLedTimer = 0;
@@ -430,20 +586,66 @@ void AccessControl::loop()
             _channels[i]->loop();
     }
 
+    // the sync export triggers. They sit after the enrollment trigger and before the scan pipeline so
+    // that the arbiter hands the scanner out in the priority order documented above. startSyncSend()
+    // only reports whether the request was consumed - a scanner which is owned by another activity or
+    // a broadcast which is still dribbling keeps the request armed and is retried.
     if (syncRequestedFingerTimer > 0 && delayCheck(syncRequestedFingerTimer, SYNC_AFTER_ENROLL_DELAY))
     {
-        startSyncSend(SyncType::FINGER, syncRequestedFingerId);
-
-        syncRequestedFingerTimer = 0;
-        syncRequestedFingerId = 0;
+        if (startSyncSend(SyncType::FINGER, syncRequestedFingerId))
+        {
+            syncRequestedFingerTimer = 0;
+            syncRequestedFingerId = 0;
+        }
     }
 
     if (syncRequestedNfcTimer > 0 && delayCheck(syncRequestedNfcTimer, SYNC_AFTER_ENROLL_DELAY))
     {
-        startSyncSend(SyncType::NFC, syncRequestedNfcId);
+        if (startSyncSend(SyncType::NFC, syncRequestedNfcId))
+        {
+            syncRequestedNfcTimer = 0;
+            syncRequestedNfcId = 0;
+        }
+    }
 
-        syncRequestedNfcTimer = 0;
-        syncRequestedNfcId = 0;
+    // known gap, deliberately left as it is: there is no trigger for syncRequestedKeyTimer/-Id, so the
+    // two ETS handlers which arm them (change/sync keypad code) never broadcast anything. A keypad
+    // broadcast needs no scanner at all, so it is unrelated to the scanner pipeline above.
+
+    // the queued maintenance operations. They sit behind the import, the enrollment and the export
+    // triggers and in front of the scan pipeline (import > enroll > export > maintenance > scan >
+    // health). Deliberately outside the lock gate: the ETS function properties and the received delete
+    // broadcasts are processed while the module is locked as well.
+    processMaintenanceStart();
+
+    if (!isLocked)
+    {
+        // the scan pipeline is the opportunistic user of the scanner, so it asks the arbiter after the
+        // import, the enrollment and the export triggers did - asking first would let a scan postpone
+        // an enrollment or a broadcast for a whole scan cycle
+        processScanStateMachine();
+
+        if (checkSensorTimer > 0 && delayCheck(checkSensorTimer, CHECK_SENSOR_DELAY))
+        {
+            // the health check is asynchronous as well; a tick which meets a busy driver or a scan
+            // in flight is simply dropped
+            if (fpPower == FpPowerState::Ready &&
+                fpOwner == FpOwner::None &&
+                !finger.isBusy())
+            {
+                finger.startHealthCheck([this](const FpResult &result) {
+                    bool success = result.ok();
+                    bool currentStatus = KoACC_FingerScannerStatus.value(DPT_Switch);
+                    if (currentStatus != success)
+                    {
+                        KoACC_FingerScannerStatus.value(success, DPT_Switch);
+                        logInfoP("Check scanner status: %u", success);
+                    }
+                });
+            }
+
+            checkSensorTimer = delayTimerInit();
+        }
     }
 
     if (ParamACC_NfcScanner == 2)
@@ -667,11 +869,288 @@ void AccessControl::sendScanAccessData(SyncType syncType, bool success, uint16_t
     KoACC_ScanAccessData.value(syncType, Dpt(15, 0, 5));        // index of access identification code (used as type)
 }
 
-bool AccessControl::searchForFinger()
+// The asynchronous scan pipeline: one driver operation is in flight at a time, its result is latched
+// by the completion callback and evaluated here in the next loop pass. Touch mode re-issues the search
+// within a CAPTURE_RETRIES_TOUCH_TIMEOUT window, continuous mode polls every 100 ms.
+void AccessControl::processScanStateMachine()
 {
-    if (!finger->hasFinger())
+    if (ParamACC_ScanMode == 0)
     {
-        if (ParamACC_ScanMode == 1 &&
+        // ---- touch mode ----------------------------------------------------------------
+        switch (scanState)
+        {
+            case ScanState::Idle:
+                if (touched)
+                {
+                    if (fpPower != FpPowerState::Ready &&
+                        fpPower != FpPowerState::Booting)
+                    {
+                        // the scanner is neither up nor coming up: the bring-up is kicked off and the
+                        // touch is consumed and lost - keeping it pending would arm the flag forever
+                        // for a disabled or dead scanner. KoACC_FingerTouched is written anyway and
+                        // the removal branch below completes the pulse on one of the next passes (it
+                        // clears the group object as soon as the scanner is not ready), so a dead or
+                        // disabled scanner reports the touch instead of swallowing it.
+                        KoACC_FingerTouched.value(true, DPT_Switch);
+                        switchFingerprintPower(true);
+                        touched = false;
+                        logDebugP("Touch dropped (power=%u)", (uint8_t)fpPower);
+                    }
+                    else if (arbiterAcquire(FpOwner::Scan))
+                    {
+                        logInfoP("Touched");
+                        // KoACC_FingerTouched has to be written before the first scanner operation is
+                        // started (this group object ordering is part of the external behaviour)
+                        KoACC_FingerTouched.value(true, DPT_Switch);
+                        touched = false;
+                        touchDeferLogTimer = 0;
+
+                        if (startScanSearch())
+                        {
+                            scanWindowStart = delayTimerInit();
+                            scanState = ScanState::Scanning;
+                        }
+                        else
+                        {
+                            arbiterRelease(FpOwner::Scan);
+                            logDebugP("Touch scan not started (power=%u, busy=%u)", (uint8_t)fpPower, finger.isBusy());
+                        }
+                    }
+                    else if (touchDeferLogTimer == 0 || delayCheck(touchDeferLogTimer, FP_DEFER_LOG_DELAY))
+                    {
+                        // another activity owns the scanner (e.g. a running enrollment): the touch
+                        // stays pending and is served as soon as the owner is through
+                        touchDeferLogTimer = delayTimerInit();
+                        logDebugP("Touch deferred, scanner busy (owner=%u, power=%u, busy=%u)",
+                                  (uint8_t)fpOwner, (uint8_t)fpPower, finger.isBusy());
+                    }
+                }
+                else if (KoACC_FingerTouched.value(DPT_Switch))
+                {
+                    // the touched KO is still set although no window is open (e.g. a touch which
+                    // could not be served): probe for the finger being removed
+                    if (fpPower != FpPowerState::Ready)
+                        finishTouchedRemoval();
+                    else
+                    {
+                        // the arbiter is not taken here, WaitRemove acquires it per probe and
+                        // releases it in between
+                        scanRemoveProbeTimer = 0;
+                        scanRemoveProbing = false;
+                        scanState = ScanState::WaitRemove;
+                    }
+                }
+                break;
+
+            case ScanState::Scanning:
+                if (!scanDone)
+                    break;
+
+                scanDone = false;
+                processScanResult(scanResult);
+
+                // no finger seen yet and the capture window is still open: re-issue the search
+                if (scanResult.status == FpStatus::NoFinger &&
+                    !delayCheck(scanWindowStart, CAPTURE_RETRIES_TOUCH_TIMEOUT) &&
+                    startScanSearch())
+                    break;
+
+                // window over (or a scan concluded): watch for the finger being taken off, which
+                // clears the touched KO and arms the shutdown timer
+                // the scanner is handed back either way - WaitRemove re-acquires it for every single
+                // probe
+                if (KoACC_FingerTouched.value(DPT_Switch))
+                {
+                    scanRemoveProbeTimer = 0;
+                    scanRemoveProbing = false;
+                    scanState = ScanState::WaitRemove;
+                }
+                else
+                    scanState = ScanState::Idle;
+
+                arbiterRelease(FpOwner::Scan);
+                break;
+
+            // the removal wait holds FpOwner::Scan only while one probe is in flight and hands it back
+            // in between. Holding it for as long as a finger rests on the sensor would starve every
+            // other scanner activity (an enrollment would fail after its start timeout, a received
+            // template and the queued maintenance operations after 90 s, the health check would be
+            // dropped pass after pass). A tick which does not get the arbiter simply retries on the
+            // next one, the touched group object stays true meanwhile.
+            case ScanState::WaitRemove:
+                if (scanRemoveProbing)
+                {
+                    // a probe is on the wire, its result is what the state waits for
+                    if (!scanDone)
+                        break;
+
+                    scanDone = false;
+                    scanRemoveProbing = false;
+                    arbiterRelease(FpOwner::Scan);
+
+                    if (scanResult.status != FpStatus::Ok)
+                    {
+                        // no finger on the sensor anymore (every non-OK answer counts as "no finger")
+                        finishTouchedRemoval();
+                        scanState = ScanState::Idle;
+                        break;
+                    }
+
+                    // still present, probe again after the pacing interval
+                    scanRemoveProbeTimer = delayTimerInit();
+                    break;
+                }
+
+                // nothing of ours is in flight and the scanner belongs to whoever needs it
+                if (scanRemoveProbeTimer > 0 && !delayCheck(scanRemoveProbeTimer, SCAN_REMOVE_PROBE_DELAY))
+                    break;
+
+                if (fpPower != FpPowerState::Ready)
+                {
+                    // the scanner cannot be asked anymore (powered off, failed): give up on the
+                    // removal window
+                    finishTouchedRemoval();
+                    scanState = ScanState::Idle;
+                    break;
+                }
+
+                if (!arbiterAcquire(FpOwner::Scan))
+                {
+                    // another activity owns the scanner: retry on the next tick, the touched group
+                    // object stays true until the finger really is gone
+                    if (touchDeferLogTimer == 0 || delayCheck(touchDeferLogTimer, FP_DEFER_LOG_DELAY))
+                    {
+                        touchDeferLogTimer = delayTimerInit();
+                        logDebugP("Finger removal probe deferred, scanner owned by %u (power=%u, busy=%u)",
+                                  (uint8_t)fpOwner, (uint8_t)fpPower, finger.isBusy());
+                    }
+
+                    break;
+                }
+
+                touchDeferLogTimer = 0;
+                if (!startScanRemoveProbe())
+                {
+                    // the driver refuses the probe: give up on the removal window
+                    arbiterRelease(FpOwner::Scan);
+                    finishTouchedRemoval();
+                    scanState = ScanState::Idle;
+                    break;
+                }
+
+                scanRemoveProbing = true;
+                break;
+        }
+
+        return;
+    }
+
+    // ---- continuous mode ---------------------------------------------------------------
+    switch (scanState)
+    {
+        case ScanState::Idle:
+            if (searchForFingerDelayTimer == 0 || delayCheck(searchForFingerDelayTimer, 100))
+            {
+                if (arbiterAcquire(FpOwner::Scan) &&
+                    startScanSearch())
+                    scanState = ScanState::Scanning;
+                else
+                {
+                    // scanner still booting, disabled or busy with a foreign operation: retry
+                    // with the normal poll cadence instead of on every loop pass
+                    if (fpOwner == FpOwner::Scan)
+                        arbiterRelease(FpOwner::Scan);
+
+                    searchForFingerDelayTimer = delayTimerInit();
+                }
+            }
+            break;
+
+        case ScanState::Scanning:
+            if (!scanDone)
+                break;
+
+            scanDone = false;
+            processScanResult(scanResult);
+
+            // the poll interval is restarted at completion, not at the start of the scan - otherwise
+            // the effective poll rate would double
+            searchForFingerDelayTimer = delayTimerInit();
+            scanState = ScanState::Idle;
+            arbiterRelease(FpOwner::Scan);
+            break;
+
+        case ScanState::WaitRemove:
+            // continuous mode has no removal window, the touched KO is tracked by the scan result.
+            // Only reachable when the scan mode changed underneath a running removal wait; that wait
+            // may not own the scanner anymore, so the release is guarded.
+            scanState = ScanState::Idle;
+            scanRemoveProbing = false;
+            if (fpOwner == FpOwner::Scan)
+                arbiterRelease(FpOwner::Scan);
+            break;
+    }
+}
+
+// GenImg -> LED ScanFinger -> GenChar(1) -> Search as one driver operation
+bool AccessControl::startScanSearch()
+{
+    scanDone = false;
+    scanResult = {};
+
+    if (finger.startSearchFinger([this](const FpResult &result) {
+            // callbacks only latch, the next operation is always started from loop()
+            scanResult = result;
+            scanDone = true;
+        }))
+        return true;
+
+    logDebugP("Finger search rejected by the driver (%s)", fpStatusText(finger.lastStartError()));
+    return false;
+}
+
+// single GenImg presence probe, used by the finger removal detection
+bool AccessControl::startScanRemoveProbe()
+{
+    scanDone = false;
+    scanResult = {};
+
+    if (finger.startDetectFinger([this](const FpResult &result) {
+            scanResult = result;
+            scanDone = true;
+        }))
+        return true;
+
+    logDebugP("Finger detection rejected by the driver (%s)", fpStatusText(finger.lastStartError()));
+    return false;
+}
+
+void AccessControl::finishTouchedRemoval()
+{
+    KoACC_FingerTouched.value(false, DPT_Switch);
+    shutdownSensorTimer = delayTimerInit();
+}
+
+// Evaluation of one completed scan: the driver already ran capture, feature extraction and library
+// search, this is the group object, action channel and LED side of the result. Returns true when the
+// sensor saw a finger.
+bool AccessControl::processScanResult(const FpResult &result)
+{
+    bool continuousMode = ParamACC_ScanMode == 1;
+
+    // every answer which is not a completed scan is treated as "no finger". Deliberate: a transport
+    // error (timeout, checksum, framing) follows this path instead of the no-match cascade below,
+    // because a single UART glitch must not reset the authentication action calls of every channel -
+    // the auth window is closed by ParamACC_AuthDelayTimeMS anyway, while a spurious reset would drop
+    // a legitimately started multi factor authentication.
+    if (result.status != FpStatus::Ok &&
+        result.status != FpStatus::NoMatch &&
+        result.status != FpStatus::NotFound)
+    {
+        if (result.status != FpStatus::NoFinger)
+            logDebugP("Finger scan failed: %s (0x%02X)", fpStatusText(result.status), result.rawConfirmation);
+
+        if (continuousMode &&
             KoACC_FingerTouched.value(DPT_Switch))
             KoACC_FingerTouched.value(false, DPT_Switch);
 
@@ -679,32 +1158,34 @@ bool AccessControl::searchForFinger()
         return false;
     }
 
-    if (ParamACC_ScanMode == 1 &&
+    if (continuousMode &&
         !KoACC_FingerTouched.value(DPT_Switch))
         KoACC_FingerTouched.value(true, DPT_Switch);
-    
-    Fingerprint::FindFingerResult findFingerResult = finger->findFingerprint();
 
-    if (findFingerResult.found)
+    if (result.status == FpStatus::Ok)
     {
-        if (ParamACC_ScanMode == 1 &&
-            hasLastFoundLocation && lastFoundLocation == findFingerResult.location)
+        logDebugP("Match #%d with confidence %d", result.location, result.score);
+
+        if (continuousMode &&
+            hasLastFoundLocation && lastFoundLocation == result.location)
         {
-            logDebugP("Same finger found in location %d and ignored", findFingerResult.location);
+            logDebugP("Same finger found in location %d and ignored", result.location);
             resetFingerLedTimer = delayTimerInit();
             return true;
         }
 
-        logInfoP("Finger found in location %d", findFingerResult.location);
-        processFingerScanSuccess(findFingerResult.location);
+        logInfoP("Finger found in location %d", result.location);
+        processFingerScanSuccess(result.location);
 
         hasLastFoundLocation = true;
-        lastFoundLocation = findFingerResult.location;
+        lastFoundLocation = result.location;
     }
     else
     {
+        logDebugP("No match with confidence %d", result.score);
+
         hasLastFoundLocation = false;
-        finger->setLed(Fingerprint::ScanNoMatch);
+        finger.setLed(FingerprintInterface::ScanNoMatch);
 
         logInfoP("Finger not found");
         KoACC_FingerScanSuccess.value(false, DPT_Switch);
@@ -720,9 +1201,21 @@ bool AccessControl::searchForFinger()
     return true;
 }
 
+// The LED ring group objects default to color 0, which the driver rejects as an unsupported color.
+// The sensor ignores the color for the "always off" control, so white is substituted - the LED really
+// turns off.
+void AccessControl::setLedRingRaw(uint8_t color, uint8_t control, uint8_t speed, uint8_t count)
+{
+    if (!finger.supportsLedColor(color))
+        color = (uint8_t)FpLedColor::White;
+
+    // note the argument order of the driver: control, speed, color, count
+    finger.setLedRaw(control, speed, color, count);
+}
+
 void AccessControl::resetRingLed()
 {
-    finger->setLed(KoACC_FingerLedRingColor.value(Dpt(5, 10)), KoACC_FingerLedRingControl.value(Dpt(5, 10)), KoACC_FingerLedRingSpeed.value(Dpt(5, 10)), KoACC_FingerLedRingCount.value(Dpt(5, 10)));
+    setLedRingRaw(KoACC_FingerLedRingColor.value(Dpt(5, 10)), KoACC_FingerLedRingControl.value(Dpt(5, 10)), KoACC_FingerLedRingSpeed.value(Dpt(5, 10)), KoACC_FingerLedRingCount.value(Dpt(5, 10)));
     logInfoP("LED ring: color=%u, control=%u, speed=%u, count=%u", (uint8_t)KoACC_FingerLedRingColor.value(Dpt(5, 10)), (uint8_t)KoACC_FingerLedRingControl.value(Dpt(5, 10)), (uint8_t)KoACC_FingerLedRingSpeed.value(Dpt(5, 10)), (uint8_t)KoACC_FingerLedRingCount.value(Dpt(5, 10)));
 }
 
@@ -750,92 +1243,417 @@ void AccessControl::processFingerScanSuccess(uint16_t location, bool external)
     if (actionExecuted)
     {
         if (!external)
-            finger->setLed(Fingerprint::ScanMatch);
+            finger.setLed(FingerprintInterface::ScanMatch);
     }
     else
     {
         if (!external)
-            finger->setLed(Fingerprint::ScanMatchNoAction);
-        
+            finger.setLed(FingerprintInterface::ScanMatchNoAction);
+
         KoACC_FingerTouchedNoAction.value(true, DPT_Switch);
     }
 }
 
-bool AccessControl::enrollFinger(uint16_t location)
+// Kicks off the asynchronous enrollment composite of the driver (6 captures, RegModel, Store,
+// index update and the whole LED sequence). Nothing is waited for here, the completion is latched
+// by the callback and evaluated by processEnrollResult() from loop(), so KNX stays fully
+// responsive for the whole enrollment.
+bool AccessControl::startEnrollFinger(uint16_t location)
 {
-    logInfoP("Enroll request:");
-    logIndentUp();
-
-    bool success = switchFingerprintPower(true);
-    if (success)
+    // the scanner has to be powered up first; the request waits for the asynchronous bring-up. A
+    // scanner which is not there at all (ETS "Kein Fingerprint", power-on rejected) fails the request
+    // immediately instead of leaving it armed.
+    if (fpPower != FpPowerState::Ready &&
+        fpPower != FpPowerState::Booting &&
+        !switchFingerprintPower(true))
     {
-        success = finger->createTemplate();
-        if (success)
-        {
-            success = finger->storeTemplate(location);
-            if (!success)
-            {
-                logInfoP("Storing template failed.");
-            }
-        }
-        else
-        {
-            logInfoP("Creating template failed.");
-        }
+        logInfoP("Enroll request:");
+        logIndentUp();
+        logInfoP("Fingerprint scanner not available (power=%u).", (uint8_t)fpPower);
+        logIndentDown();
+
+        // enrollActive stays false for a request which never started a driver composite - it gates the
+        // progress the ETS wait poll reads, and enrollProgress() would still answer the value of the
+        // previous run. The finalization owns all the remaining bookkeeping.
+        enrollActiveLocation = location;
+        enrollResult = FpStatus::ErrNotReady;
+        enrollSuccess = false;
+        enrollDone = true;
+        return false;
     }
 
-    if (success)
+    if (!arbiterAcquire(FpOwner::Enroll))
     {
-        logInfoP("Enrolled to location %d.", location);
+        // the scan pipeline, a health check or the bring-up still holds the scanner: the request
+        // timer stays armed on purpose and the trigger re-fires on the next pass. The wait is bounded
+        // by the ENROLL_START_TIMEOUT check in loop(), which also covers a request that was armed
+        // while the module is locked and therefore never reaches this function at all.
+        if (enrollDeferLogTimer == 0 || delayCheck(enrollDeferLogTimer, FP_DEFER_LOG_DELAY))
+        {
+            enrollDeferLogTimer = delayTimerInit();
+            logDebugP("Enroll request delayed, scanner busy (owner=%u, power=%u, busy=%u)",
+                      (uint8_t)fpOwner, (uint8_t)fpPower, finger.isBusy());
+        }
+
+        return false;
+    }
+
+    enrollDeferLogTimer = 0;
+    logInfoP("Enroll request:");
+    logIndentUp();
+    logInfoP("Enrolling to location %d.", location);
+
+    enrollActiveLocation = location;
+    enrollDone = false;
+    enrollSuccess = false;
+    enrollResult = FpStatus::Ok;
+
+    // the progress callback exists for the driver internals only: it already keeps enrollProgress()
+    // (read by the ETS wait poll) and drives the complete LED sequence, so nothing is mirrored here
+    if (finger.startEnroll(
+            location,
+            nullptr,
+            [this](const FpResult &result) {
+                // callbacks only latch, all finalization runs in processEnrollResult()
+                enrollResult = result.status;
+                enrollSuccess = result.ok();
+                enrollDone = true;
+            }))
+    {
+        // set only for a run the driver really accepted (it zeroes its progress there), so the ETS wait
+        // poll can never read the progress of a previous enrollment
+        enrollActive = true;
+    }
+    else
+    {
+        logErrorP("Enroll rejected by the driver (%s)", fpStatusText(finger.lastStartError()));
+
+        enrollResult = finger.lastStartError();
+        enrollSuccess = false;
+        enrollDone = true;
+    }
+
+    logIndentDown();
+    return !enrollDone;
+}
+
+// Finalization of an asynchronous enrollment, called from loop() outside the lock gate: the log lines,
+// the sync broadcast arming, the LED reset timer and the release of the scanner ownership.
+void AccessControl::processEnrollResult()
+{
+    if (!enrollDone)
+        return;
+
+    enrollDone = false;
+
+    logIndentUp();
+    if (enrollSuccess)
+    {
+        logInfoP("Enrolled to location %d.", enrollActiveLocation);
 
         //###ToDo: remote management status feedback
 
-        finger->setLed(Fingerprint::State::Success);
+        // armed as soon as the enrollment succeeded; the ETS wait poll reports success while this
+        // timer is pending
+        syncRequestedFingerId = enrollActiveLocation;
+        syncRequestedFingerTimer = delayTimerInit();
     }
     else
     {
         logInfoP("Enrolling template failed.");
-        
+        logIndentUp();
+        // the reason is spelled out because both finger waits of the driver are bounded: a finger which
+        // is never placed on or never taken off the sensor fails the enrollment with a timeout (the
+        // driver logs which of the two waits ran out)
+        logInfoP("Reason: %s (0x%02X)", fpStatusText(enrollResult), (uint8_t)enrollResult);
+        logIndentDown();
+
         //###ToDo: remote management status feedback
-
-        finger->setLed(Fingerprint::State::Failed);
     }
-
     logIndentDown();
+
+    // the Success/Failed LED is part of the driver composite, only the ring LED reset is re-armed here
     resetFingerLedTimer = delayTimerInit();
 
-    return success;
-}
+    // a lock which arrived during the enrollment has already applied its LED, which the composite
+    // overwrote with Success/Failed afterwards; it is re-applied so the visible state matches the
+    // locked module again (the LED reset timer above is gated behind !isLocked)
+    if (isLocked)
+        finger.setLed(FingerprintInterface::Locked);
 
-bool AccessControl::deleteFinger(uint16_t location, bool sync)
-{
-    logInfoP("Delete request:");
-    logIndentUp();
-
-    bool success = switchFingerprintPower(true);
-    if (success)
-        success = finger->deleteTemplate(location);
-
-    if (success)
+    // last wins: an enrollment requested for another location while this one was running (group
+    // object or ETS) has re-armed the request fields, so they are kept and the trigger starts the
+    // next enrollment on the following pass
+    if (enrollRequestedFingerLocation == enrollActiveLocation)
     {
-        logInfoP("Template deleted from location %d.", location);
-        
-        //###ToDo: remote management status feedback
-
-        if (sync)
-            startSyncDelete(SyncType::FINGER, location);
+        enrollRequestedFingerTimer = 0;
+        enrollRequestedFingerLocation = 0;
     }
     else
+        logInfoP("Enroll re-requested for location %d while location %d was running", enrollRequestedFingerLocation, enrollActiveLocation);
+
+    enrollActive = false;
+    // not acquired at all when the request failed before the arbiter was asked
+    if (fpOwner == FpOwner::Enroll)
+        arbiterRelease(FpOwner::Enroll);
+}
+
+// True while an ETS maintenance operation is queued or in flight. The ETS handlers answer their
+// function property optimistically, so a second request has to be refused with the failure code.
+bool AccessControl::maintenanceBusy() const
+{
+    return maintPending != MaintOp::None || maintActive;
+}
+
+// A delete which arrived as a sync broadcast from another device. Nobody is waiting for an answer, so
+// it is never executed inline (a scanner operation must not run in the group object callback) and never
+// dropped either: it is queued and drained by processMaintenanceStart() from loop().
+void AccessControl::queueBusDelete(uint16_t location)
+{
+    if (busDeleteQueueCount >= BUS_DELETE_QUEUE_SIZE)
     {
-        logInfoP("Deleting template failed.");
-        
-        //###ToDo: remote management status feedback
+        logErrorP("Sync-Receive (delete finger): queue full, fingerId=%u dropped", location);
+        return;
     }
 
-    logIndentDown();
+    busDeleteQueue[(busDeleteQueueHead + busDeleteQueueCount) % BUS_DELETE_QUEUE_SIZE] = location;
+    if (busDeleteQueueCount == 0)
+        busDeletePendingTimer = delayTimerInit();
+    busDeleteQueueCount++;
+}
+
+// The arbiter side of the queued maintenance operations. Called from loop() after the sync import, the
+// enrollment and the sync export triggers and before the scan pipeline, so the priority order
+// (import > enroll > export > maintenance > scan > health) is realized by position.
+void AccessControl::processMaintenanceStart()
+{
+    if (maintActive)
+        return;
+
+    bool hasBusDelete = busDeleteQueueCount > 0;
+    if (!hasBusDelete && maintPending == MaintOp::None)
+        return;
+
+    // sampled BEFORE the bring-up is kicked off: switchFingerprintPower(true) turns a Failed scanner
+    // into Booting, so a test afterwards could never see Failed and a queued operation would keep
+    // re-triggering the bring-up for the whole MAINT_START_TIMEOUT window (about 16 attempts over 90 s)
+    // instead of failing right away. Mirrors the reachable test in processSyncImportStart().
+    bool wasFailed = fpPower == FpPowerState::Failed;
+
+    // the scanner is brought up if it is not up yet; a scanner which cannot be powered at all (ETS
+    // "Kein Fingerprint") fails the request right away instead of keeping it queued
+    bool available = fpPower == FpPowerState::Ready ||
+                     fpPower == FpPowerState::Booting ||
+                     switchFingerprintPower(true);
+
+    if (available && arbiterAcquire(FpOwner::Maintenance))
+    {
+        maintDeferLogTimer = 0;
+        busDeleteDeferLogTimer = 0;
+
+        if (hasBusDelete)
+        {
+            uint16_t location = busDeleteQueue[busDeleteQueueHead];
+            busDeleteQueueHead = (busDeleteQueueHead + 1) % BUS_DELETE_QUEUE_SIZE;
+            busDeleteQueueCount--;
+            busDeletePendingTimer = delayTimerInit();
+
+            // a delete which came in over the bus is never broadcast again
+            startMaintenanceOp(MaintOp::DeleteFinger, location, false);
+            return;
+        }
+
+        MaintOp op = maintPending;
+        maintPending = MaintOp::None;
+        startMaintenanceOp(op, maintDeleteLocation, maintDeleteSendSync);
+        return;
+    }
+
+    // the scanner is owned by another activity (a running enrollment holds it for up to a minute) or
+    // it never becomes ready: the requests stay queued and are retried on the next pass, bounded so
+    // a dead scanner cannot block the queue forever
+    bool giveUp = !available || wasFailed;
+
+    if (hasBusDelete)
+    {
+        if (giveUp || delayCheck(busDeletePendingTimer, MAINT_START_TIMEOUT))
+        {
+            uint16_t location = busDeleteQueue[busDeleteQueueHead];
+            busDeleteQueueHead = (busDeleteQueueHead + 1) % BUS_DELETE_QUEUE_SIZE;
+            busDeleteQueueCount--;
+            busDeletePendingTimer = delayTimerInit();
+
+            logInfoP("Delete request:");
+            logIndentUp();
+            logInfoP("Deleting template failed.");
+            logIndentUp();
+            logInfoP("Reason: scanner did not become available (location=%u, owner=%u, power=%u).", location, (uint8_t)fpOwner, (uint8_t)fpPower);
+            logIndentDown();
+            logIndentDown();
+        }
+        else if (busDeleteDeferLogTimer == 0 || delayCheck(busDeleteDeferLogTimer, FP_DEFER_LOG_DELAY))
+        {
+            busDeleteDeferLogTimer = delayTimerInit();
+            logDebugP("Received delete delayed, scanner owned by %u (power=%u, busy=%u, queued=%u)",
+                      (uint8_t)fpOwner, (uint8_t)fpPower, finger.isBusy(), busDeleteQueueCount);
+        }
+    }
+
+    if (maintPending == MaintOp::None)
+        return;
+
+    if (giveUp || delayCheck(maintPendingTimer, MAINT_START_TIMEOUT))
+    {
+        // the ETS answer was already given optimistically, so this is the one place which can only
+        // report the loss
+        logErrorP("Maintenance operation %u dropped, the scanner did not become available (owner=%u, power=%u)",
+                  (uint8_t)maintPending, (uint8_t)fpOwner, (uint8_t)fpPower);
+        maintPending = MaintOp::None;
+        return;
+    }
+
+    if (maintDeferLogTimer == 0 || delayCheck(maintDeferLogTimer, FP_DEFER_LOG_DELAY))
+    {
+        maintDeferLogTimer = delayTimerInit();
+        logDebugP("Maintenance operation %u delayed, scanner owned by %u (power=%u, busy=%u)",
+                  (uint8_t)maintPending, (uint8_t)fpOwner, (uint8_t)fpPower, finger.isBusy());
+    }
+}
+
+// Kicks the matching driver composite off. The composites emit the whole LED sequence (Busy, then
+// Success/Failed, and DeleteNotFound without any wire traffic for a location the index cache does not
+// know), keep the index cache truthful and - for the password - adopt the new one for the running
+// session.
+bool AccessControl::startMaintenanceOp(MaintOp op, uint16_t location, bool sendSync)
+{
+    maintActive = true;
+    maintActiveOp = op;
+    maintActiveLocation = location;
+    maintActiveSendSync = sendSync;
+    maintDone = false;
+    maintOk = false;
+    maintResult = FpStatus::Ok;
+
+    // callbacks only latch, the whole finalization runs in processMaintenanceResult()
+    auto done = [this](const FpResult &result) {
+        maintResult = result.status;
+        maintOk = result.ok();
+        maintDone = true;
+    };
+
+    bool accepted = false;
+    switch (op)
+    {
+        case MaintOp::DeleteFinger:
+            logInfoP("Delete request: deleting template from location %d.", location);
+            accepted = finger.startDeleteTemplate(location, done);
+            break;
+        case MaintOp::EmptyDatabase:
+            logInfoP("Reset scanner: emptying the finger library.");
+            accepted = finger.startEmptyDatabase(done);
+            break;
+        case MaintOp::SetPassword:
+            logInfoP("Setting new fingerprint scanner password.");
+            accepted = finger.startSetPassword(maintNewPasswordCrc, done);
+            break;
+        default:
+            logErrorP("Unsupported maintenance operation %u", (uint8_t)op);
+            break;
+    }
+
+    if (!accepted)
+    {
+        maintResult = finger.lastStartError();
+        maintOk = false;
+        maintDone = true;
+    }
+
+    return accepted;
+}
+
+// Finalization of a queued maintenance operation: the log lines, the delete sync broadcast, the
+// password flash write and the release of the scanner ownership. Runs from loop(), never from a driver
+// callback.
+void AccessControl::processMaintenanceResult()
+{
+    if (!maintDone)
+        return;
+
+    maintDone = false;
+
+    switch (maintActiveOp)
+    {
+        case MaintOp::DeleteFinger:
+            logInfoP("Delete request:");
+            logIndentUp();
+            if (maintOk)
+            {
+                logInfoP("Template deleted from location %d.", maintActiveLocation);
+
+                //###ToDo: remote management status feedback
+
+                // the broadcast is sent only for a template which really was deleted
+                if (maintActiveSendSync)
+                    startSyncDelete(SyncType::FINGER, maintActiveLocation);
+            }
+            else
+            {
+                logInfoP("Deleting template failed.");
+                logIndentUp();
+                logInfoP("Reason: %s (0x%02X)", fpStatusText(maintResult), (uint8_t)maintResult);
+                logIndentDown();
+
+                //###ToDo: remote management status feedback
+            }
+            logIndentDown();
+            break;
+
+        case MaintOp::EmptyDatabase:
+            if (maintOk)
+                logInfoP("Reset scanner: finger library emptied.");
+            else
+            {
+                logErrorP("Reset scanner: emptying the finger library failed.");
+                logIndentUp();
+                logInfoP("Reason: %s (0x%02X)", fpStatusText(maintResult), (uint8_t)maintResult);
+                logIndentDown();
+            }
+            break;
+
+        case MaintOp::SetPassword:
+            if (maintOk)
+            {
+                logInfoP("Setting new fingerprint scanner password: Success.");
+                logIndentUp();
+                // the flash copy is written only when the sensor confirmed the new password; the driver
+                // has already adopted it for the running session, so no re-init is needed
+                logDebugP("Saving new password in flash.");
+                _fingerprintStorage.writeInt(FLASH_FINGER_SCANNER_PASSWORD_OFFSET, maintNewPasswordCrc);
+                _fingerprintStorage.commit();
+                logIndentDown();
+            }
+            else
+            {
+                logInfoP("Setting new fingerprint scanner password: Failed.");
+                logIndentUp();
+                logInfoP("Reason: %s (0x%02X)", fpStatusText(maintResult), (uint8_t)maintResult);
+                logInfoP("The password in the flash is left untouched.");
+                logIndentDown();
+            }
+            break;
+
+        default:
+            break;
+    }
+
+    // the Busy/Success/Failed LED sequence is part of the driver composite, only the ring LED reset
+    // is re-armed here
     resetFingerLedTimer = delayTimerInit();
 
-    return success;
+    maintActive = false;
+    maintActiveOp = MaintOp::None;
+    if (fpOwner == FpOwner::Maintenance)
+        arbiterRelease(FpOwner::Maintenance);
 }
 
 bool AccessControl::deleteNfc(uint16_t nfcId, bool sync)
@@ -995,7 +1813,7 @@ void AccessControl::processInputKoLock(GroupObject &ko)
     if (switchFingerprintPower(true))
     {
         if (isLocked)
-            finger->setLed(Fingerprint::State::Locked);
+            finger.setLed(FingerprintInterface::Locked);
         else
             resetRingLed();
     }
@@ -1018,10 +1836,15 @@ void AccessControl::processInputKoEnrollFinger(GroupObject &ko)
     uint16_t asap = ko.asap();
     if (asap == ACC_KoFingerEnrollNext)
     {
-        success = switchFingerprintPower(true);
+        // the index cache is only truthful once the bring-up published a ready scanner - asking it
+        // earlier answers 0xFFFF for every library, which would arm an enrollment that could only fail
+        // after its start timeout. The bring-up is kicked off (a repeated request succeeds as soon as
+        // it is through) and the request itself is failed right here.
+        switchFingerprintPower(true);
+        success = fpPower == FpPowerState::Ready;
         if (success)
         {
-            location = finger->getNextFreeLocation();
+            location = finger.getNextFreeLocation();
             logInfoP("Next availabe location: %d", location);
         }
         else
@@ -1301,82 +2124,217 @@ void AccessControl::startSyncDelete(SyncType syncType, uint16_t deleteId)
     syncIgnoreTimer = delayTimerInit();
 }
 
-void AccessControl::startSyncSend(SyncType syncType, uint16_t syncId, bool loadModel)
+// Phase 1 of a sync broadcast. The finger template export is an asynchronous driver composite
+// from here on - it is started and the function returns, processSyncExportResult() then runs phase 2
+// (person data, compression, checksum, control packet). NFC and keypad records need no scanner at
+// all and are still filled and sent synchronously.
+// Return value: true = the request has been consumed (started, or definitively dropped), false = the
+// caller has to keep it armed and retry on a later pass.
+bool AccessControl::startSyncSend(SyncType syncType, uint16_t syncId, bool loadModel)
 {
-    if (!ParamACC_EnableSync ||
-        syncReceiving)
-        return;
+    if (!ParamACC_EnableSync)
+        return true;
 
-    logInfoP("Sync-Send (syncType=%u): started: syncId=%u, loadModel=%u, syncDelay=%u", syncId, loadModel, ParamACC_SyncDelay);
+    // the compressed buffer is still being dribbled out packet by packet, or a template transfer of
+    // either direction is in flight - a second fill would clobber the buffers of the running transfer
+    // and truncate it, so the request stays armed and is retried instead
+    if (syncSending ||
+        syncExportActive ||
+        syncImportPending ||
+        syncImportActive)
+    {
+        if (syncDeferLogTimer == 0 || delayCheck(syncDeferLogTimer, FP_DEFER_LOG_DELAY))
+        {
+            syncDeferLogTimer = delayTimerInit();
+            logDebugP("Sync-Send (syncType=%u) delayed, previous sync still running (sending=%u, export=%u, import=%u)",
+                      syncType, syncSending, syncExportActive, syncImportPending || syncImportActive);
+        }
+
+        return false;
+    }
+
+    // an incoming sync which is currently being assembled drops an outgoing broadcast
+    if (syncReceiving)
+        return true;
+
+    // the finger template export needs the scanner, so it is taken through the arbiter before anything
+    // is logged or filled. A foreign owner (scan, enrollment, health check) or a bring-up which has not
+    // published a ready scanner yet simply postpones the broadcast - the request stays armed and the log
+    // lines below stay a once-per-broadcast affair.
+    if (syncType == SyncType::FINGER)
+    {
+        if (!switchFingerprintPower(true))
+        {
+            logErrorP("Sync-Send (syncType=%u): powering scanner on failed", syncType);
+            return true;
+        }
+
+        if (!arbiterAcquire(FpOwner::SyncSend))
+        {
+            // absolute bound for a broadcast which never gets the scanner (a dead scanner, an owner
+            // which never lets go). Without it the request would stay armed forever and block every
+            // later sync send behind it. Same class of safety net as SYNC_IMPORT_START_TIMEOUT on the
+            // receiving side.
+            if (syncRequestedFingerTimer > 0 &&
+                delayCheck(syncRequestedFingerTimer, SYNC_SEND_START_TIMEOUT))
+            {
+                logErrorP("Sync-Send (syncType=%u): scanner did not become available (owner=%u, power=%u), request dropped",
+                          syncType, (uint8_t)fpOwner, (uint8_t)fpPower);
+                syncDeferLogTimer = 0;
+                return true; // consume the request
+            }
+
+            if (syncDeferLogTimer == 0 || delayCheck(syncDeferLogTimer, FP_DEFER_LOG_DELAY))
+            {
+                syncDeferLogTimer = delayTimerInit();
+                logDebugP("Sync-Send (syncType=%u) delayed, scanner owned by %u (power=%u, busy=%u)",
+                          syncType, (uint8_t)fpOwner, (uint8_t)fpPower, finger.isBusy());
+            }
+
+            return false;
+        }
+
+        syncDeferLogTimer = 0;
+    }
+
+    logInfoP("Sync-Send (syncType=%u): started: syncId=%u, loadModel=%u, syncDelay=%u", syncType, syncId, loadModel, ParamACC_SyncDelay);
 
     uint8_t syncTypeCode = 0;
-    uint8_t syncSendBufferTemp[SYNC_BUFFER_SIZE];
     uint32_t storageOffset = 0;
     uint8_t syncData[max(OPENKNX_ACC_FLASH_FINGER_DATA_SIZE, OPENKNX_ACC_FLASH_NFC_DATA_SIZE)] = {};
     switch (syncType)
     {
         case SyncType::FINGER:
+        {
             syncTypeCode = 0;
 
-            if (!switchFingerprintPower(true))
-            {
-                logErrorP("Sync-Send (syncType=%u): powering scanner on failed", syncType);
-                return;
-            }
-    
-            finger->setLed(Fingerprint::State::Busy);
-    
-            bool success;
-            if (loadModel)
-            {
-                success = finger->loadTemplate(syncId);
-                if (!success)
-                {
-                    logErrorP("Sync-Send (syncType=%u): loading template failed", syncType);
-                    return;
-                }
-            }
-    
-            success = finger->retrieveTemplate(syncSendBufferTemp);
-            if (!success)
-            {
-                logErrorP("Sync-Send (syncType=%u): retrieving template failed", syncType);
-                return;
-            }
-    
-            resetRingLed();
+            // the arbiter guarantees an idle scan pipeline here
+            finger.setLed(FingerprintInterface::Busy);
 
-            storageOffset = ACC_CalcFingerStorageOffset(syncId);
-            _fingerprintStorage.read(storageOffset, syncData, OPENKNX_ACC_FLASH_FINGER_DATA_SIZE);
-            memcpy(syncSendBufferTemp + TEMPLATE_SIZE, syncData, OPENKNX_ACC_FLASH_FINGER_DATA_SIZE);        
-            break;
+            // zeroed on every fill (see the member declaration): the person data keeps its frozen
+            // place at offset FP_TEMPLATE_SIZE_MAX and the tail behind the template compresses away
+            memset(syncExportBuffer, 0, SYNC_BUFFER_SIZE);
+
+            syncExportActive = true;
+            syncExportDone = false;
+            syncExportOk = false;
+            syncExportResult = FpStatus::Ok;
+            syncExportSyncId = syncId;
+
+            // callbacks only latch, the finalization runs in processSyncExportResult()
+            auto exportDone = [this](const FpResult &result) {
+                syncExportResult = result.status;
+                syncExportOk = result.ok();
+                syncExportDone = true;
+            };
+
+            // templateSize(), not FP_TEMPLATE_SIZE_MAX: an R503Pro answers UpChar with 512 bytes, so
+            // asking it for 1536 would run into the data phase timeout. The template lands at offset 0
+            // of the zeroed 1565 byte buffer either way.
+            bool accepted = loadModel
+                                ? finger.startRetrieveTemplate(syncId, syncExportBuffer, finger.templateSize(), exportDone)
+                                : finger.startUpChar(1, syncExportBuffer, finger.templateSize(), exportDone);
+            if (!accepted)
+            {
+                syncExportResult = finger.lastStartError();
+                syncExportOk = false;
+                syncExportDone = true;
+            }
+
+            return true;
+        }
         case SyncType::NFC:
             syncTypeCode = 10;
 
+            memset(syncExportBuffer, 0, SYNC_BUFFER_SIZE);
             storageOffset = ACC_CalcNfcStorageOffset(syncId);
             _nfcStorage.read(storageOffset, syncData, OPENKNX_ACC_FLASH_NFC_DATA_SIZE);
-            memcpy(syncSendBufferTemp, syncData, OPENKNX_ACC_FLASH_NFC_DATA_SIZE);        
+            memcpy(syncExportBuffer, syncData, OPENKNX_ACC_FLASH_NFC_DATA_SIZE);
             break;
         case SyncType::KEY:
             syncTypeCode = 20;
 
+            memset(syncExportBuffer, 0, SYNC_BUFFER_SIZE);
             storageOffset = ACC_CalcKeyStorageOffset(syncId);
             _keypadStorage.read(storageOffset, syncData, OPENKNX_ACC_FLASH_KEY_DATA_SIZE);
-            memcpy(syncSendBufferTemp, syncData, OPENKNX_ACC_FLASH_KEY_DATA_SIZE);        
+            memcpy(syncExportBuffer, syncData, OPENKNX_ACC_FLASH_KEY_DATA_SIZE);
             break;
         default:
             logErrorP("Sync-Send (syncType=%u): delete: Unsupported sync type", syncType);
-            return;
+            return true;
     }
 
+    sendSyncControlPacket(syncTypeCode, syncId);
+    return true;
+}
+
+// Finalization of the asynchronous template export. Called from loop(), so the flash read, the
+// compression and the group object write never run from a driver callback.
+void AccessControl::processSyncExportResult()
+{
+    if (!syncExportDone)
+        return;
+
+    syncExportDone = false;
+
+    bool success = syncExportOk;
+    if (success)
+    {
+        uint32_t storageOffset = ACC_CalcFingerStorageOffset(syncExportSyncId);
+        uint8_t syncData[OPENKNX_ACC_FLASH_FINGER_DATA_SIZE] = {};
+        _fingerprintStorage.read(storageOffset, syncData, OPENKNX_ACC_FLASH_FINGER_DATA_SIZE);
+        // fixed offset FP_TEMPLATE_SIZE_MAX (1536) on both models - the sync wire format is frozen
+        memcpy(syncExportBuffer + FP_TEMPLATE_SIZE_MAX, syncData, OPENKNX_ACC_FLASH_FINGER_DATA_SIZE);
+    }
+    else
+    {
+        logErrorP("Sync-Send (syncType=%u): retrieving template failed", (uint8_t)SyncType::FINGER);
+        logIndentUp();
+        logInfoP("Reason: %s (0x%02X)", fpStatusText(syncExportResult), (uint8_t)syncExportResult);
+        logIndentDown();
+
+        // the reset timer below makes sure a failed broadcast cannot strand the ring LED at "Busy". The
+        // request fields were already consumed by the trigger in loop(), a failed export is not retried.
+    }
+
+    // the ring LED is handed to the reset timer instead of being reset right here, exactly like the
+    // three other finalizations do: resetting it directly while the suppression flag is still set would
+    // leave the timer armed, so a stale one would fire a second, immediate reset one pass later.
+    // Re-arming and clearing the flag afterwards keeps the LED for the usual second.
+    resetFingerLedTimer = delayTimerInit();
+    syncExportActive = false;
+
+    // a lock which arrived during the export applied its LED before the composite overwrote it with
+    // "Busy"; it is re-applied because the reset timer above is gated behind !isLocked (same as the
+    // enrollment finalization does)
+    if (isLocked)
+        finger.setLed(FingerprintInterface::Locked);
+
+    // phase 2 and the packet dribbling in processSyncSend() need no scanner
+    if (fpOwner == FpOwner::SyncSend)
+        arbiterRelease(FpOwner::SyncSend);
+
+    if (success)
+        sendSyncControlPacket(0, syncExportSyncId);
+}
+
+// Phase 2 of a sync broadcast: compresses syncExportBuffer, checksums the result and sends the control
+// packet. syncSending is set here and only here, which is what the ETS "wait for sync sending" function
+// property polls.
+void AccessControl::sendSyncControlPacket(uint8_t syncTypeCode, uint16_t syncId)
+{
+    // compressing 1565 bytes plus the CRC is legitimately heavy work which does not fit into the loop
+    // time budget; it runs once per broadcast, so the warning is suppressed for this pass
+    openknx.common.skipLooptimeWarning();
+
     const int maxDstSize = LZ4_compressBound(SYNC_BUFFER_SIZE);
-    const int compressedDataSize = LZ4_compress_default((char*)syncSendBufferTemp, (char*)syncSendBuffer, SYNC_BUFFER_SIZE, maxDstSize);
+    const int compressedDataSize = LZ4_compress_default((char*)syncExportBuffer, (char*)syncSendBuffer, SYNC_BUFFER_SIZE, maxDstSize);
 
     syncSendBufferLength = compressedDataSize;
     syncSendPacketCount = ceil(syncSendBufferLength / (float)SYNC_SEND_PACKET_DATA_LENGTH) + 1; // currently separated control packet
     uint16_t checksum = crc16.ccitt(syncSendBuffer, syncSendBufferLength);
 
-    logDebugP("Sync-Send (syncType=%u, 1/%u): control packet: bufferLength=%u, lengthPerPacket=%u, checksum=%u, fingerId=%u%", syncType, syncSendPacketCount, syncSendBufferLength, SYNC_SEND_PACKET_DATA_LENGTH, checksum, syncId);
+    logDebugP("Sync-Send (syncTypeCode=%u, 1/%u): control packet: bufferLength=%u, lengthPerPacket=%u, checksum=%u, fingerId=%u, uncompressed=%u, compressed=%u", syncTypeCode, syncSendPacketCount, syncSendBufferLength, SYNC_SEND_PACKET_DATA_LENGTH, checksum, syncId, (uint16_t)(SYNC_BUFFER_SIZE), syncSendBufferLength);
 
     /*
     Sync Control Packet Layout:
@@ -1439,7 +2397,16 @@ void AccessControl::processSyncSend()
 
 void AccessControl::processSyncReceive(uint8_t* data)
 {
-    if (syncSending)
+    // while a received finger template is waiting for the scanner or is being written to it,
+    // syncImportBuffer holds the payload of that transfer. A new incoming sync would decompress over
+    // it, so all sync traffic is ignored for that window, just like it is while an own broadcast is
+    // being sent out. syncExportActive belongs into the set as well: a running template export owns the
+    // scanner, and an incoming template would queue an import behind it which the export's own trigger
+    // would then have to compete with.
+    if (syncSending ||
+        syncExportActive ||
+        syncImportPending ||
+        syncImportActive)
         return;
 
     if (syncIgnoreTimer > 0)
@@ -1506,7 +2473,11 @@ void AccessControl::processSyncReceive(uint8_t* data)
                 syncDeleteFingerId = (data[3] << 8) | data[4];
                 logDebugP("Sync-Receive (delete finger): fingerId=%u", syncDeleteFingerId);
 
-                deleteFinger(syncDeleteFingerId, false);
+                // queued instead of executed inline - a scanner operation must not run in the group
+                // object callback. It is never dropped and never broadcast again; a location the index
+                // cache does not know is answered by the driver composite with the DeleteNotFound LED
+                // and without any wire traffic.
+                queueBusDelete(syncDeleteFingerId);
 
                 syncReceiving = false;
                 return;
@@ -1578,9 +2549,17 @@ void AccessControl::processSyncReceive(uint8_t* data)
                 return;
             }
 
-            finger->setLed(Fingerprint::State::Busy);
+            finger.setLed(FingerprintInterface::Busy);
         }
 
+        // the CRC over the received buffer and the decompression below are the receive side counterpart
+        // of the heavy work in sendSyncControlPacket(); they run once per received broadcast, right in
+        // the group object callback, so the warning is suppressed for this pass
+        openknx.common.skipLooptimeWarning();
+
+        // known behaviour, deliberately left as it is: the two failure returns below leave syncReceiving
+        // true, so the sync path keeps ignoring traffic until the next control packet arrives (which
+        // resets the whole assembly state anyway).
         uint16_t checksum = crc16.ccitt(syncReceiveBuffer, syncReceiveBufferLength);
         if (syncReceiveBufferChecksum == checksum)
             logDebugP("Sync-Receive (syncType=%u): finished (checksum=%u)", syncReceiveType, syncReceiveBufferChecksum);
@@ -1590,22 +2569,24 @@ void AccessControl::processSyncReceive(uint8_t* data)
 
             if (syncReceiveType == SyncType::FINGER)
             {
-                finger->setLed(Fingerprint::State::Failed);
+                finger.setLed(FingerprintInterface::Failed);
                 resetFingerLedTimer = delayTimerInit();
             }
 
             return;
         }
 
-        uint8_t syncSendBufferTemp[SYNC_BUFFER_SIZE];
-        const int decompressedSize = LZ4_decompress_safe((char*)syncReceiveBuffer, (char*)syncSendBufferTemp, syncReceiveBufferLength, SYNC_BUFFER_SIZE);
+        // decompresses into the member buffer, zeroed first so nothing of a previous sync can
+        // survive behind a payload the decompression did not cover
+        memset(syncImportBuffer, 0, SYNC_BUFFER_SIZE);
+        const int decompressedSize = LZ4_decompress_safe((char*)syncReceiveBuffer, (char*)syncImportBuffer, syncReceiveBufferLength, SYNC_BUFFER_SIZE);
         if (decompressedSize != SYNC_BUFFER_SIZE)
         {
             logErrorP("Sync-Receive (syncType=%u): decompression failed (size expected=%u, received=%u)", syncReceiveType, SYNC_BUFFER_SIZE, decompressedSize);
 
             if (syncReceiveType == SyncType::FINGER)
             {
-                finger->setLed(Fingerprint::State::Failed);
+                finger.setLed(FingerprintInterface::Failed);
                 resetFingerLedTimer = delayTimerInit();
             }
 
@@ -1616,37 +2597,22 @@ void AccessControl::processSyncReceive(uint8_t* data)
         switch (syncReceiveType)
         {
             case SyncType::FINGER:
-                if (!finger->sendTemplate(syncSendBufferTemp))
-                {
-                    logErrorP("Sync-Receive (syncType=%u): sending finger template failed", syncReceiveType);
-                    finger->setLed(Fingerprint::State::Failed);
-                    resetFingerLedTimer = delayTimerInit();
-                    return;
-                }
-
-                if (!finger->storeTemplate(syncReceiveSyncId))
-                {
-                    logErrorP("Sync-Receive (syncType=%u): storing finger template failed", syncReceiveType);
-                    finger->setLed(Fingerprint::State::Failed);
-                    resetFingerLedTimer = delayTimerInit();
-                    return;
-                }
-
-                storageOffset = ACC_CalcFingerStorageOffset(syncReceiveSyncId);
-                _fingerprintStorage.write(storageOffset, syncSendBufferTemp + TEMPLATE_SIZE, OPENKNX_ACC_FLASH_FINGER_DATA_SIZE);
-                _fingerprintStorage.commit();
-
-                finger->setLed(Fingerprint::State::Success);
-                resetFingerLedTimer = delayTimerInit();
-                break;
+                // the template import is an asynchronous driver composite: it is started by
+                // processSyncImportStart() from loop() and finished by processSyncImportResult(),
+                // which writes the person data, logs and sets the LED. syncReceiving stays true
+                // until then, so the observable "a sync is being received" window spans the whole
+                // transfer and the sync path keeps ignoring incoming traffic meanwhile.
+                syncImportPending = true;
+                syncImportPendingTimer = delayTimerInit();
+                return;
             case SyncType::NFC:
                 storageOffset = ACC_CalcNfcStorageOffset(syncReceiveSyncId);
-                _nfcStorage.write(storageOffset, syncSendBufferTemp, OPENKNX_ACC_FLASH_NFC_DATA_SIZE);
+                _nfcStorage.write(storageOffset, syncImportBuffer, OPENKNX_ACC_FLASH_NFC_DATA_SIZE);
                 _nfcStorage.commit();
                 break;
             case SyncType::KEY:
                 storageOffset = ACC_CalcKeyStorageOffset(syncReceiveSyncId);
-                _keypadStorage.write(storageOffset, syncSendBufferTemp, OPENKNX_ACC_FLASH_KEY_DATA_SIZE);
+                _keypadStorage.write(storageOffset, syncImportBuffer, OPENKNX_ACC_FLASH_KEY_DATA_SIZE);
                 _keypadStorage.commit();
                 break;
         }
@@ -1654,6 +2620,101 @@ void AccessControl::processSyncReceive(uint8_t* data)
         logInfoP("Sync-Receive (syncType=%u): data stored", syncReceiveType);
         syncReceiving = false;
     }
+}
+
+// The arbiter side of a received finger template. The import is the highest priority scanner
+// activity (it keeps the whole sync path blocked while it waits) and it is always started from
+// loop(), never from the group object callback which assembled the last packet.
+void AccessControl::processSyncImportStart()
+{
+    if (!syncImportPending)
+        return;
+
+    if (!arbiterAcquire(FpOwner::SyncReceive))
+    {
+        // a scanner which never becomes ready or an owner which never lets go would block every
+        // further sync, so the wait is bounded
+        if (fpPower == FpPowerState::Failed ||
+            delayCheck(syncImportPendingTimer, SYNC_IMPORT_START_TIMEOUT))
+        {
+            logErrorP("Sync-Receive (syncType=%u): scanner did not become available (owner=%u, power=%u)", syncReceiveType, (uint8_t)fpOwner, (uint8_t)fpPower);
+
+            finger.setLed(FingerprintInterface::Failed);
+            resetFingerLedTimer = delayTimerInit();
+
+            syncImportPending = false;
+            syncReceiving = false;
+            return;
+        }
+
+        if (syncImportDeferLogTimer == 0 || delayCheck(syncImportDeferLogTimer, FP_DEFER_LOG_DELAY))
+        {
+            syncImportDeferLogTimer = delayTimerInit();
+            logDebugP("Sync-Receive (syncType=%u): import delayed, scanner owned by %u (power=%u, busy=%u)",
+                      syncReceiveType, (uint8_t)fpOwner, (uint8_t)fpPower, finger.isBusy());
+        }
+
+        return;
+    }
+
+    syncImportDeferLogTimer = 0;
+    syncImportPending = false;
+    syncImportActive = true;
+    syncImportDone = false;
+    syncImportOk = false;
+    syncImportResult = FpStatus::Ok;
+
+    // startStoreTemplate() is DownChar + post data guard + Store + index cache update.
+    // templateSize(), not FP_TEMPLATE_SIZE_MAX: only the leading 512 bytes go to an R503Pro.
+    if (!finger.startStoreTemplate(syncReceiveSyncId, syncImportBuffer, finger.templateSize(),
+                                           [this](const FpResult &result) {
+                                               // callbacks only latch, see processSyncImportResult()
+                                               syncImportResult = result.status;
+                                               syncImportOk = result.ok();
+                                               syncImportDone = true;
+                                           }))
+    {
+        syncImportResult = finger.lastStartError();
+        syncImportOk = false;
+        syncImportDone = true;
+    }
+}
+
+// Finalization of a received finger template: the flash write, the log line and the LEDs.
+void AccessControl::processSyncImportResult()
+{
+    if (!syncImportDone)
+        return;
+
+    syncImportDone = false;
+
+    if (syncImportOk)
+    {
+        uint32_t storageOffset = ACC_CalcFingerStorageOffset(syncReceiveSyncId);
+        // fixed offset FP_TEMPLATE_SIZE_MAX (1536) on both models - the sync wire format is frozen
+        _fingerprintStorage.write(storageOffset, syncImportBuffer + FP_TEMPLATE_SIZE_MAX, OPENKNX_ACC_FLASH_FINGER_DATA_SIZE);
+        _fingerprintStorage.commit();
+
+        finger.setLed(FingerprintInterface::Success);
+        resetFingerLedTimer = delayTimerInit();
+
+        logInfoP("Sync-Receive (syncType=%u): data stored", syncReceiveType);
+    }
+    else
+    {
+        logErrorP("Sync-Receive (syncType=%u): storing finger template failed", syncReceiveType);
+        logIndentUp();
+        logInfoP("Reason: %s (0x%02X)", fpStatusText(syncImportResult), (uint8_t)syncImportResult);
+        logIndentDown();
+
+        finger.setLed(FingerprintInterface::Failed);
+        resetFingerLedTimer = delayTimerInit();
+    }
+
+    syncImportActive = false;
+    syncReceiving = false;
+    if (fpOwner == FpOwner::SyncReceive)
+        arbiterRelease(FpOwner::SyncReceive);
 }
 
 bool AccessControl::processFunctionProperty(uint8_t objectIndex, uint8_t propertyId, uint8_t length, uint8_t *data, uint8_t *resultData, uint8_t &resultLength)
@@ -1787,8 +2848,10 @@ void AccessControl::handleFunctionPropertyWaitEnrollFingerFinished(uint8_t *data
         // resultData[1] true, if enroll request was successful
         resultData[1] = syncRequestedFingerTimer > 0;
     } else {
-        // as long as enroll is not finished, return progress
-        resultData[1] = finger->enrollProgress;
+        // as long as enroll is not finished, return progress; the driver keeps it live for the
+        // running enrollment (1-6 = waiting for capture n, 7 = create model, 8 = store) and 0 is
+        // reported while the request is only armed and no composite has been started yet
+        resultData[1] = enrollActive ? finger.enrollProgress() : 0;
     }
     // logIndentDown();
 }
@@ -1803,7 +2866,7 @@ void AccessControl::handleFunctionPropertyChangeFinger(uint8_t *data, uint8_t *r
 
     if (switchFingerprintPower(true))
     {
-        if (finger->hasLocation(fingerId))
+        if (finger.hasLocation(fingerId))
         {
             uint8_t personFinger = data[3];
             logDebugP("personFinger: %d", personFinger);
@@ -1856,7 +2919,7 @@ void AccessControl::handleFunctionPropertySyncFinger(uint8_t *data, uint8_t *res
 
     if (switchFingerprintPower(true))
     {
-        if (finger->hasLocation(fingerId))
+        if (finger.hasLocation(fingerId))
         {
             syncRequestedFingerId = fingerId;
             syncRequestedFingerTimer = delayTimerInit();
@@ -1888,8 +2951,50 @@ void AccessControl::handleFunctionPropertyDeleteFinger(uint8_t *data, uint8_t *r
     _fingerprintStorage.write(storageOffset + 1, *personName, 28);
     _fingerprintStorage.commit();
 
-    bool success = deleteFinger(fingerId);
-    
+    // the scanner side is queued and executed asynchronously, so everything which decides the answer of
+    // this call has to come from local state. A location the drivers index cache does not know (and
+    // every location when the scanner is not ready, because the cache then answers false for all of
+    // them) takes the "not found" path: the DeleteNotFound LED, no wire traffic and the failure code.
+    bool success = false;
+    if (!finger.hasLocation(fingerId))
+    {
+        logInfoP("Deleting template failed.");
+        logIndentUp();
+        logInfoP("Reason: no template stored in location %d.", fingerId);
+        logIndentDown();
+
+        // only latched for a scanner which is up. The driver keeps the LED in its latch
+        // until the next command boundary, so a latch set while it is not ready (the cache answers
+        // "no template" for every location then) would surface on a later successful bring-up.
+        if (fpPower == FpPowerState::Ready)
+        {
+            finger.setLed(FingerprintInterface::DeleteNotFound);
+            resetFingerLedTimer = delayTimerInit();
+        }
+    }
+    else if (maintenanceBusy())
+    {
+        logInfoP("Deleting template failed.");
+        logIndentUp();
+        logInfoP("Reason: another maintenance operation is still running.");
+        logIndentDown();
+
+        resetFingerLedTimer = delayTimerInit();
+    }
+    else
+    {
+        // answered optimistically: the operation itself runs from loop() and, on success, sends the
+        // delete sync broadcast (converting this to a request/poll pair would need knxprod changes)
+        maintPending = MaintOp::DeleteFinger;
+        maintDeleteLocation = fingerId;
+        maintDeleteSendSync = true;
+        maintPendingTimer = delayTimerInit();
+        maintDeferLogTimer = 0;
+
+        logInfoP("Delete of location %d queued.", fingerId);
+        success = true;
+    }
+
     resultData[0] = success ? 0 : 1;
     resultLength = 1;
     logIndentDown();
@@ -1900,9 +3005,33 @@ void AccessControl::handleFunctionPropertyResetFingerScanner(uint8_t *data, uint
     logInfoP("Function property finger: Reset scanner");
     logIndentUp();
 
+    // the local person data wipe stays synchronous (it is flash, not the scanner), emptying the finger
+    // library is queued. The wipe is skipped when the scanner is not available, so the person data and
+    // the finger library can never get out of step.
     bool success = false;
-    if (switchFingerprintPower(true))
+    if (fpPower != FpPowerState::Ready)
     {
+        logInfoP("Resetting the scanner failed.");
+        logIndentUp();
+        logInfoP("Reason: fingerprint scanner not available (power=%u).", (uint8_t)fpPower);
+        logIndentDown();
+
+        // kick the bring-up off so a repeated attempt can succeed
+        switchFingerprintPower(true);
+    }
+    else if (maintenanceBusy())
+    {
+        logInfoP("Resetting the scanner failed.");
+        logIndentUp();
+        logInfoP("Reason: another maintenance operation is still running.");
+        logIndentDown();
+    }
+    else
+    {
+        // 1500 flash records plus the commit are far above the loop time budget and this runs in the
+        // ETS request context, so the warning is suppressed for this pass
+        openknx.common.skipLooptimeWarning();
+
         char fingerData[OPENKNX_ACC_FLASH_FINGER_DATA_SIZE] = {}; // empty
         for (uint16_t i = 0; i < MAX_FINGERS; i++)
         {
@@ -1911,8 +3040,12 @@ void AccessControl::handleFunctionPropertyResetFingerScanner(uint8_t *data, uint
         }
         _fingerprintStorage.commit();
 
-        success = finger->emptyDatabase();
-        resetFingerLedTimer = delayTimerInit();
+        maintPending = MaintOp::EmptyDatabase;
+        maintPendingTimer = delayTimerInit();
+        maintDeferLogTimer = 0;
+
+        logInfoP("Person data wiped, emptying the finger library queued.");
+        success = true;
     }
 
     resultData[0] = success ? 0 : 1;
@@ -1930,7 +3063,7 @@ void AccessControl::handleFunctionPropertySearchPersonByFingerId(uint8_t *data, 
 
     if (switchFingerprintPower(true))
     {
-        if (!finger->hasLocation(fingerId))
+        if (!finger.hasLocation(fingerId))
         {
             logDebugP("Unrecognized by scanner!");
             resultData[0] = 1;
@@ -2011,15 +3144,22 @@ void AccessControl::handleFunctionPropertySearchFingerIdByPerson(uint8_t *data, 
     uint16_t foundTotalCount = 0;
     if (switchFingerprintPower(true))
     {
-        uint16_t* fingerIds = finger->getLocations();
-        uint16_t templateCount = finger->getTemplateCount();
+        // the drivers index cache is walked directly, nothing is materialized for this single call site.
+        // hasLocation() answers false for every location while the scanner is not ready, so a dead
+        // scanner simply returns "nothing found".
+        uint16_t capacity = finger.libraryCapacity();
+        uint16_t templateCount = finger.getTemplateCount();
+        uint16_t visitedCount = 0;
 
         uint32_t storageOffset = 0;
         uint8_t personFinger = 0;
         uint8_t personName[28] = {};
-        for (uint16_t i = 0; i < templateCount; i++)
+        for (uint16_t fingerId = 0; fingerId < capacity && visitedCount < templateCount; fingerId++)
         {
-            uint16_t fingerId = fingerIds[i];
+            if (!finger.hasLocation(fingerId))
+                continue;
+
+            visitedCount++;
             storageOffset = ACC_CalcFingerStorageOffset(fingerId);
             personFinger = _fingerprintStorage.readByte(storageOffset);
             if (searchPersonFinger > 0)
@@ -2117,28 +3257,38 @@ void AccessControl::handleFunctionPropertySetFingerPassword(uint8_t *data, uint8
         logDebugP("Current matches old CRC.");
         logIndentUp();
 
-        logInfoP("Setting new fingerprint scanner password.");
-        logIndentUp();
-
-        if (switchFingerprintPower(true))
-            success = finger->setPassword(newPasswordCrc);
-        
-        resetFingerLedTimer = delayTimerInit();
-        logInfoP(success ? "Success." : "Failed.");
-        logIndentDown();
-        
-        if (success)
+        // the old password validation above is local (flash CRC) and stays synchronous, the SetPwd
+        // command itself is queued. On success the finalization writes the new CRC to the flash - it is
+        // persisted only when the sensor confirmed the change - and the driver adopts the new password
+        // for the running session, so no re-init is needed.
+        if (fpPower != FpPowerState::Ready)
         {
-            logDebugP("Saving new password in flash.");
-            _fingerprintStorage.writeInt(FLASH_FINGER_SCANNER_PASSWORD_OFFSET, newPasswordCrc);
-            _fingerprintStorage.commit();
+            logInfoP("Setting new fingerprint scanner password: Failed.");
+            logIndentUp();
+            logInfoP("Reason: fingerprint scanner not available (power=%u).", (uint8_t)fpPower);
+            logIndentDown();
 
-            finger->close();
-            initFingerprintScanner();
-            finger->start();
+            // kick the bring-up off so a repeated attempt can succeed
+            switchFingerprintPower(true);
+        }
+        else if (maintenanceBusy())
+        {
+            logInfoP("Setting new fingerprint scanner password: Failed.");
+            logIndentUp();
+            logInfoP("Reason: another maintenance operation is still running.");
+            logIndentDown();
+        }
+        else
+        {
+            maintPending = MaintOp::SetPassword;
+            maintNewPasswordCrc = newPasswordCrc;
+            maintPendingTimer = delayTimerInit();
+            maintDeferLogTimer = 0;
+
+            logInfoP("Setting new fingerprint scanner password queued.");
+            success = true;
         }
 
-        resetFingerLedTimer = delayTimerInit();
         logIndentDown();
 
         resultData[0] = success ? 0 : 2;
@@ -2148,7 +3298,7 @@ void AccessControl::handleFunctionPropertySetFingerPassword(uint8_t *data, uint8
         logDebugP("Invalid old password provided.");
         resultData[0] = 1;
     }
-    
+
     resultLength = 1;
     logIndentDown();
 }
@@ -2709,18 +3859,6 @@ void AccessControl::processAfterStartupDelay()
 {
 }
 
-void AccessControl::delayCallback(uint32_t period)
-{
-    uint32_t start = delayTimerInit();
-    delayCallbackActive = true;
-
-    while (!delayCheck(start, period))
-        openknx.loop();
-
-    openknx.common.skipLooptimeWarning();
-    delayCallbackActive = false;
-}
-
 bool AccessControl::sendReadRequest(GroupObject &ko)
 {
     // ensure, that we do not send too many read requests at the same time
@@ -2761,6 +3899,14 @@ bool AccessControl::processCommand(const std::string cmd, bool diagnoseKo)
         openknx.console.writeDiagenoseKo("");
         openknx.console.writeDiagenoseKo("-> pwr off");
         openknx.console.writeDiagenoseKo("");
+        openknx.console.writeDiagenoseKo("-> fpi test");
+        openknx.console.writeDiagenoseKo("");
+        openknx.console.writeDiagenoseKo("-> fpi info");
+        openknx.console.writeDiagenoseKo("");
+        openknx.console.writeDiagenoseKo("-> fpi idx");
+        openknx.console.writeDiagenoseKo("");
+        openknx.console.writeDiagenoseKo("-> fpi led <0-9>");
+        openknx.console.writeDiagenoseKo("");
     }
 #ifdef SCANNER_PWR_PIN
     else if (cmd.length() == 10 && cmd.substr(4, 6) == "pwr on")
@@ -2774,121 +3920,580 @@ bool AccessControl::processCommand(const std::string cmd, bool diagnoseKo)
         result = true;
     }
 #endif
+    // the test mode only arms the sequencer here and returns immediately, the script itself is
+    // walked step by step from loop(bool) - which the framework also calls on an unconfigured device
     else if (cmd.length() == 13 && cmd.substr(4, 9) == "test mode")
     {
-        runTestMode(0, false);
+        startTestMode(0, false);
         result = true;
     }
     else if (cmd.length() == 13 && cmd.substr(4, 9) == "test nfc1")
     {
-        runTestMode(1, false);
+        startTestMode(1, false);
         result = true;
     }
     else if (cmd.length() == 13 && cmd.substr(4, 9) == "test nfc2")
     {
-        runTestMode(2, false);
+        startTestMode(2, false);
         result = true;
     }
     else if (cmd.length() == 12 && cmd.substr(4, 8) == "test key")
     {
-        runTestMode(0, true);
+        startTestMode(0, true);
         result = true;
+    }
+    else if (cmd.length() >= 8 && cmd.substr(4, 4) == "fpi ")
+    {
+        result = processCommandFingerprintInterface(cmd);
     }
 
     return result;
 }
 
-void AccessControl::runTestMode(uint8_t testModeNfc, bool testModeKeypad)
+// ---------------------------------------------------------------------------------------
+// scanner diagnostics, running against the productive driver
+//
+// "acc fpi info|idx|led <n>" answer straight from the live drivers state - they need no wire
+// traffic beyond the LED latch and therefore work at any time, also in the middle of normal
+// operation. "acc fpi test" is a small sequencer (processFingerprintTest(), pumped from
+// loop(bool)): it claims the driver through the ownership arbiter (FpOwner::Test) so that a scan,
+// an enrollment or a template transfer cannot run into it, brings a powered off or faulted scanner
+// up itself for hardware triage, dumps the system parameters, waits 5 s for a finger and hands the
+// arbiter back. Normal operation resumes by itself, no reboot is needed.
+// ---------------------------------------------------------------------------------------
+
+bool AccessControl::processCommandFingerprintInterface(const std::string cmd)
 {
-    logInfoP("Starting test mode");
-    logIndentUp();
+    if (cmd.length() == 12 && cmd.substr(8, 4) == "test")
+    {
+        if (ParamACC_FingerprintScanner == 3)
+        {
+            logInfoP("ETS scanner type is set to 3 (no fingerprint scanner), nothing to test.");
+            return true;
+        }
 
-    logInfoP("Testing scanner:");
-    logIndentUp();
+        if (testModeStep > 0)
+        {
+            logInfoP("The console test mode is running (step %u), try again afterwards.", testModeStep);
+            return true;
+        }
+
+        if (fpiTestStep > 0)
+        {
+            logInfoP("Scanner test is already running (step %u).", fpiTestStep);
+            return true;
+        }
+
+        fpiTestScanDone = false;
+        fpiTestTimer = delayTimerInit();
+        fpiTestStep = 1;
+        return true;
+    }
+
+    if (cmd.length() == 12 && cmd.substr(8, 4) == "info")
+    {
+        logInfoP("Powered: %u, ready: %u, busy: %u (power state %u, owner %u)",
+                 finger.isPoweredOn(), finger.isReady(), finger.isBusy(), (uint8_t)fpPower, (uint8_t)fpOwner);
+
+        if (!finger.isReady())
+        {
+            logInfoP("Scanner is not ready, run 'acc fpi test' to bring it up.");
+            return true;
+        }
+
+        // the dump walks the index cache, which does not fit into the loop time budget
+        openknx.common.skipLooptimeWarning();
+        finger.logSystemParameters();
+        return true;
+    }
+
+    if (cmd.length() == 11 && cmd.substr(8, 3) == "idx")
+    {
+        if (!finger.isReady())
+        {
+            logInfoP("Scanner is not ready (power state %u), run 'acc fpi test' to bring it up.", (uint8_t)fpPower);
+            return true;
+        }
+
+        // lists up to 1500 locations, so it never fits into the loop time budget
+        openknx.common.skipLooptimeWarning();
+        logInfoP("Template index (%u stored, valid up to %u):", finger.getTemplateCount(), finger.indexValidUpTo());
+        logIndentUp();
+        finger.forEachLocation([this](uint16_t location) { logInfoP("%u", location); });
+        logIndentDown();
+        logInfoP("Next free location: %u", finger.getNextFreeLocation());
+        return true;
+    }
+
+    if (cmd.length() == 13 && cmd.substr(8, 4) == "led ")
+    {
+        char digit = cmd[12];
+        if (digit < '0' || digit > '9')
+        {
+            logInfoP("Usage: acc fpi led <0-9>");
+            return true;
+        }
+
+        if (!finger.isReady())
+        {
+            logInfoP("Scanner is not ready (power state %u), run 'acc fpi test' to bring it up.", (uint8_t)fpPower);
+            return true;
+        }
+
+        FingerprintInterface::LedState state = (FingerprintInterface::LedState)(digit - '0');
+        logInfoP("Set LED state %u", (uint8_t)state);
+        // latched in the driver and pushed out at the next command boundary; a productive activity
+        // (scan, LED reset timer) may of course overwrite it again afterwards
+        finger.setLed(state);
+        return true;
+    }
+
+    return false;
+}
+
+// Steps:
+//   1  claim the scanner (FpOwner::Test), bring it up if it is not ready
+//   2  wait for the bring-up, dump powered/ready/busy and the system parameters, LED WaitForFinger
+//   3  search for a finger until one is found or the 5 s window is over
+//   4  report, release the scanner
+void AccessControl::processFingerprintTest()
+{
+    switch (fpiTestStep)
+    {
+        case 1:
+            if (!arbiterAcquire(FpOwner::Test))
+            {
+                if (delayCheck(fpiTestTimer, FPI_TEST_START_TIMEOUT))
+                {
+                    logInfoP("Scanner test: the scanner is owned by %u, aborted.", (uint8_t)fpOwner);
+                    fpiTestStep = 0;
+                }
+                return;
+            }
+
+            logInfoP("Scanner test:");
+
+            // a powered off or faulted scanner is brought up here so the command stays useful for
+            // triaging a possibly defective unit; a running one is used as it is
+            if (fpPower != FpPowerState::Ready)
+            {
+                // the flash driver is only initialized by setup(), which the framework skips on an
+                // unconfigured device - reading the stored password there returns garbage and would
+                // fail the bring-up. The test mode bring-up of switchFingerprintPower() uses the
+                // factory default 0 and leaves the status group object alone, which is exactly what an
+                // unconfigured device needs; a configured one gets the productive bring-up (ETS model,
+                // stored password, status group object) so normal operation is restored by it.
+                bool unconfigured = !knx.configured();
+                if (unconfigured)
+                    logInfoP("Device is not configured, using the factory default password 0.");
+
+                switchFingerprintPower(true, unconfigured);
+            }
+
+            fpiTestTimer = delayTimerInit();
+            fpiTestStep = 2;
+            return;
+
+        case 2:
+            // the driver gives a missing scanner up after about 5.5 s and reports Failed, the timeout
+            // here is only a safety net
+            if (fpPower == FpPowerState::Booting &&
+                !delayCheck(fpiTestTimer, FPI_TEST_POWER_TIMEOUT))
+                return;
+
+            if (fpPower != FpPowerState::Ready)
+            {
+                logIndentUp();
+                logInfoP("Fingerprint scanner not available (power=%u).", (uint8_t)fpPower);
+                logIndentDown();
+                fpiTestStep = 4;
+                return;
+            }
+
+            logIndentUp();
+            // the dump walks the index cache, which does not fit into the loop time budget
+            openknx.common.skipLooptimeWarning();
+            logInfoP("Powered: %u, ready: %u, busy: %u", finger.isPoweredOn(), finger.isReady(), finger.isBusy());
+            finger.logSystemParameters();
+            logIndentDown();
+
+            logInfoP("Place a finger on the sensor now (test window 5 s)...");
+            finger.setLed(FingerprintInterface::WaitForFinger);
+
+            fpiTestScanDone = false;
+            fpiTestWindowStart = delayTimerInit();
+            fpiTestPollTimer = 0; // first attempt right away
+            fpiTestStep = 3;
+            return;
+
+        case 3:
+            if (fpiTestScanDone)
+            {
+                logIndentUp();
+                if (fpiTestScanResult.ok())
+                {
+                    logInfoP("Test scan: match at location %u with score %u", fpiTestScanResult.location, fpiTestScanResult.score);
+                    finger.setLed(FingerprintInterface::ScanMatch);
+                }
+                else
+                {
+                    logInfoP("Test scan: %s (raw 0x%02X)", fpStatusText(fpiTestScanResult.status), fpiTestScanResult.rawConfirmation);
+                    finger.setLed(FingerprintInterface::ScanNoMatch);
+                }
+                logIndentDown();
+
+                fpiTestStep = 4;
+                return;
+            }
+
+            if (delayCheck(fpiTestWindowStart, FPI_TEST_SCAN_WINDOW))
+            {
+                // a search which is still in flight is awaited (its own ack timeouts bound this), so
+                // the driver is idle again when the arbiter is handed back; a result which arrives
+                // just now is still reported by the branch above
+                if (finger.isBusy())
+                    return;
+
+                logIndentUp();
+                logInfoP("Test scan: no finger detected within the test window.");
+                logIndentDown();
+                finger.setLed(FingerprintInterface::None);
+
+                fpiTestStep = 4;
+                return;
+            }
+
+            if (finger.isBusy() || !delayCheck(fpiTestPollTimer, FPI_TEST_SCAN_POLL))
+                return;
+
+            fpiTestPollTimer = delayTimerInit();
+            // the completion callback only latches, the report is written by the next pass
+            if (!finger.startSearchFinger([this](const FpResult &result) {
+                    if (result.status == FpStatus::NoFinger)
+                        return; // keep polling until the test window expires
+
+                    fpiTestScanResult = result;
+                    fpiTestScanDone = true;
+                }))
+                logDebugP("Test scan rejected by the driver (%s)", fpStatusText(finger.lastStartError()));
+            return;
+
+        default:
+            logInfoP("Scanner test finished.");
+
+            if (fpOwner == FpOwner::Test)
+                arbiterRelease(FpOwner::Test);
+
+            // the result LED is taken back by the productive reset timer, exactly like after a scan
+            resetFingerLedTimer = delayTimerInit();
+            fpiTestStep = 0;
+            return;
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// non blocking test mode sequencer
+//
+// The test script is a step machine which is walked by processTestMode() from loop(bool), so it also
+// works on an unconfigured device - where only loop(bool) is called - and never stalls the KNX stack.
+//
+// Steps:
+//   1  claim the scanner (FpOwner::Test) and start its bring-up
+//   2  wait for the bring-up, dump the system parameters, LED Success
+//   3  (+1000 ms) LED off, LED pin modes, touch button LED red on
+//   4  (+1000 ms) red off, green on
+//   5  (+1000 ms) green off, prepare the relay test (or jump to 11 without a relay)
+//   6  relay set impulse on
+//   7  (+impulse) relay set impulse off
+//   8  (+1000 ms) relay reset impulse on
+//   9  (+impulse) relay reset impulse off
+//   10 (+1000 ms) repeat 6..9 once (two iterations)
+//   11 start the NFC sub test (or jump to 13)
+//   12 pump the NFC reader until a tag was seen or 10 s are over
+//   13 start the keypad sub test (or jump to 15)
+//   14 pump the keypad until 100 s are over
+//   15 "Testing finished", release the scanner
+// ---------------------------------------------------------------------------------------
+
+void AccessControl::startTestMode(uint8_t testModeNfc, bool testModeKeypad)
+{
+    if (testModeStep > 0)
+    {
+        logInfoP("Test mode is already running (step %u).", testModeStep);
+        return;
+    }
+
+    // the test mode suppresses the whole pipeline including the "acc fpi test" sequencer, and both claim
+    // FpOwner::Test - so a running scanner test is not interrupted but asked to finish first
+    if (fpiTestStep > 0)
+    {
+        logInfoP("The scanner test is running (step %u), try again afterwards.", fpiTestStep);
+        return;
+    }
+
+    this->testModeNfcType = testModeNfc;
+    this->testModeKeypad = testModeKeypad;
+    // reset on every run: the flag is also the exit condition of the sub test waits, so a tag which
+    // was found by a previous run must not end the next one immediately
+    testModeNfcFound = false;
+    testModeRelayIteration = 0;
+    testModeTimer = delayTimerInit();
+    testModeStep = 1;
+}
+
+void AccessControl::processTestMode()
+{
+    switch (testModeStep)
+    {
+        case 1:
+            // the scanner is claimed before its bring-up (the productive pipeline may own it, and on
+            // an unconfigured device it was never powered at all)
+            if (!arbiterAcquire(FpOwner::Test))
+            {
+                if (delayCheck(testModeTimer, TEST_MODE_POWER_TIMEOUT))
+                {
+                    logInfoP("Test mode: scanner is owned by %u, aborted.", (uint8_t)fpOwner);
+                    testModeStep = 0;
+                }
+                return;
+            }
+
+            logInfoP("Starting test mode");
+            logIndentUp();
+            logInfoP("Testing scanner:");
+            logIndentDown();
+
 #ifdef SCANNER_PWR_PIN
-    pinMode(SCANNER_PWR_PIN, OUTPUT);
+            pinMode(SCANNER_PWR_PIN, OUTPUT);
 #endif
-    if (switchFingerprintPower(true, true))
-        finger->logSystemParameters();
-    finger->setLed(Fingerprint::State::Success);
-    logIndentDown();
-    delay(1000);
-    finger->setLed(Fingerprint::State::None);
+            // testMode = true: the bring-up is done even for the ETS type "no fingerprint scanner" and
+            // the scanner status group object is left alone
+            switchFingerprintPower(true, true);
 
-    logInfoP("Testing LEDs:");
-    logIndentUp();
+            testModeTimer = delayTimerInit();
+            testModeStep = 2;
+            return;
 
-    if (testModeNfc < 2)
-    {
-        openknx.gpio.pinMode(DIRECT_LED_GREEN_PIN, OUTPUT);
-        openknx.gpio.pinMode(DIRECT_LED_RED_PIN, OUTPUT);
-    }
-    else
-    {
-        openknx.gpio.pinMode(EXTERN_LED_GREEN_PIN, OUTPUT);
-        openknx.gpio.pinMode(EXTERN_LED_RED_PIN, OUTPUT);
-    }
+        case 2:
+            // the bring-up runs asynchronously; the driver gives a missing scanner up after about
+            // 5.5 s and reports Failed, the timeout here is only a safety net
+            if (fpPower == FpPowerState::Booting &&
+                !delayCheck(testModeTimer, TEST_MODE_POWER_TIMEOUT))
+                return;
 
-    logInfoP("Touch buttons red");
-    openknx.gpio.digitalWrite(testModeNfc < 2 ? DIRECT_LED_RED_PIN : EXTERN_LED_RED_PIN, HIGH);
-    delay(1000);
-    openknx.gpio.digitalWrite(testModeNfc < 2 ? DIRECT_LED_RED_PIN : EXTERN_LED_RED_PIN, LOW);
+            logIndentUp();
+            logIndentUp();
+            if (fpPower == FpPowerState::Ready)
+                finger.logSystemParameters();
+            else
+                logInfoP("Fingerprint scanner not available (power=%u).", (uint8_t)fpPower);
+            logIndentDown();
+            logIndentDown();
 
-    logInfoP("Touch buttons green");
-    openknx.gpio.digitalWrite(testModeNfc < 2 ? DIRECT_LED_GREEN_PIN : EXTERN_LED_GREEN_PIN, HIGH);
-    delay(1000);
-    openknx.gpio.digitalWrite(testModeNfc < 2 ? DIRECT_LED_GREEN_PIN : EXTERN_LED_GREEN_PIN, LOW);
-    logIndentDown();
+            finger.setLed(FingerprintInterface::Success);
+
+            testModeTimer = delayTimerInit();
+            testModeStep = 3;
+            return;
+
+        case 3:
+            if (!delayCheck(testModeTimer, TEST_MODE_STEP_DELAY))
+                return;
+
+            finger.setLed(FingerprintInterface::None);
+
+            logInfoP("Testing LEDs:");
+            logIndentUp();
+
+            if (testModeNfcType < 2)
+            {
+                openknx.gpio.pinMode(DIRECT_LED_GREEN_PIN, OUTPUT);
+                openknx.gpio.pinMode(DIRECT_LED_RED_PIN, OUTPUT);
+            }
+            else
+            {
+                openknx.gpio.pinMode(EXTERN_LED_GREEN_PIN, OUTPUT);
+                openknx.gpio.pinMode(EXTERN_LED_RED_PIN, OUTPUT);
+            }
+
+            logInfoP("Touch buttons red");
+            logIndentDown();
+            openknx.gpio.digitalWrite(testModeNfcType < 2 ? DIRECT_LED_RED_PIN : EXTERN_LED_RED_PIN, HIGH);
+
+            testModeTimer = delayTimerInit();
+            testModeStep = 4;
+            return;
+
+        case 4:
+            if (!delayCheck(testModeTimer, TEST_MODE_STEP_DELAY))
+                return;
+
+            openknx.gpio.digitalWrite(testModeNfcType < 2 ? DIRECT_LED_RED_PIN : EXTERN_LED_RED_PIN, LOW);
+
+            logIndentUp();
+            logInfoP("Touch buttons green");
+            logIndentDown();
+            openknx.gpio.digitalWrite(testModeNfcType < 2 ? DIRECT_LED_GREEN_PIN : EXTERN_LED_GREEN_PIN, HIGH);
+
+            testModeTimer = delayTimerInit();
+            testModeStep = 5;
+            return;
+
+        case 5:
+            if (!delayCheck(testModeTimer, TEST_MODE_STEP_DELAY))
+                return;
+
+            openknx.gpio.digitalWrite(testModeNfcType < 2 ? DIRECT_LED_GREEN_PIN : EXTERN_LED_GREEN_PIN, LOW);
 
 #ifdef OPENKNX_SWA_SET_PINS
-    logInfoP("Testing relay:");
-    logIndentUp();
-    logInfoP("Relay off");
-    pinMode(OPENKNX_SWA_SET_PINS, OUTPUT);
-    pinMode(OPENKNX_SWA_RESET_PINS, OUTPUT);
-    digitalWrite(OPENKNX_SWA_SET_PINS, OPENKNX_SWA_SET_ACTIVE_ON == HIGH ? LOW : HIGH);
-    digitalWrite(OPENKNX_SWA_RESET_PINS, OPENKNX_SWA_RESET_ACTIVE_ON == HIGH ? LOW : HIGH);
-    for (uint8_t i = 0; i < 2; i++)
-    {
-        logInfoP("Relay set");
-        digitalWrite(OPENKNX_SWA_SET_PINS, OPENKNX_SWA_SET_ACTIVE_ON == HIGH ? HIGH : LOW);
-        delay(OPENKNX_SWA_BISTABLE_IMPULSE_LENGTH);
-        digitalWrite(OPENKNX_SWA_SET_PINS, OPENKNX_SWA_SET_ACTIVE_ON == HIGH ? LOW : HIGH);
-        delay(1000);
-        logInfoP("Relay reset");
-        digitalWrite(OPENKNX_SWA_RESET_PINS, OPENKNX_SWA_RESET_ACTIVE_ON == HIGH ? HIGH : LOW);
-        delay(OPENKNX_SWA_BISTABLE_IMPULSE_LENGTH);
-        digitalWrite(OPENKNX_SWA_RESET_PINS, OPENKNX_SWA_RESET_ACTIVE_ON == HIGH ? LOW : HIGH);
-        delay(1000);
-    }
-    logIndentDown();
+            logInfoP("Testing relay:");
+            logIndentUp();
+            logInfoP("Relay off");
+            logIndentDown();
+            pinMode(OPENKNX_SWA_SET_PINS, OUTPUT);
+            pinMode(OPENKNX_SWA_RESET_PINS, OUTPUT);
+            digitalWrite(OPENKNX_SWA_SET_PINS, OPENKNX_SWA_SET_ACTIVE_ON == HIGH ? LOW : HIGH);
+            digitalWrite(OPENKNX_SWA_RESET_PINS, OPENKNX_SWA_RESET_ACTIVE_ON == HIGH ? LOW : HIGH);
+
+            testModeRelayIteration = 0;
+            testModeStep = 6;
+#else
+            testModeStep = 11;
+#endif
+            return;
+
+#ifdef OPENKNX_SWA_SET_PINS
+        case 6:
+            logIndentUp();
+            logInfoP("Relay set");
+            logIndentDown();
+            digitalWrite(OPENKNX_SWA_SET_PINS, OPENKNX_SWA_SET_ACTIVE_ON == HIGH ? HIGH : LOW);
+
+            testModeTimer = delayTimerInit();
+            testModeStep = 7;
+            return;
+
+        case 7:
+            if (!delayCheck(testModeTimer, OPENKNX_SWA_BISTABLE_IMPULSE_LENGTH))
+                return;
+
+            digitalWrite(OPENKNX_SWA_SET_PINS, OPENKNX_SWA_SET_ACTIVE_ON == HIGH ? LOW : HIGH);
+
+            testModeTimer = delayTimerInit();
+            testModeStep = 8;
+            return;
+
+        case 8:
+            if (!delayCheck(testModeTimer, TEST_MODE_STEP_DELAY))
+                return;
+
+            logIndentUp();
+            logInfoP("Relay reset");
+            logIndentDown();
+            digitalWrite(OPENKNX_SWA_RESET_PINS, OPENKNX_SWA_RESET_ACTIVE_ON == HIGH ? HIGH : LOW);
+
+            testModeTimer = delayTimerInit();
+            testModeStep = 9;
+            return;
+
+        case 9:
+            if (!delayCheck(testModeTimer, OPENKNX_SWA_BISTABLE_IMPULSE_LENGTH))
+                return;
+
+            digitalWrite(OPENKNX_SWA_RESET_PINS, OPENKNX_SWA_RESET_ACTIVE_ON == HIGH ? LOW : HIGH);
+
+            testModeTimer = delayTimerInit();
+            testModeStep = 10;
+            return;
+
+        case 10:
+            if (!delayCheck(testModeTimer, TEST_MODE_STEP_DELAY))
+                return;
+
+            // two iterations
+            testModeStep = ++testModeRelayIteration < 2 ? 6 : 11;
+            return;
 #endif
 
-    if (testModeNfc > 0)
-    {
-        logInfoP("Waiting for NFC tag:");
-        logIndentUp();
-        initNfc(true, testModeNfc);
-        u_int32_t nfcWaitTimer = delayTimerInit();
-        while (!testModeNfcFound && !delayCheck(nfcWaitTimer, 10000))
+        case 11:
+            if (testModeNfcType == 0)
+            {
+                testModeStep = 13;
+                return;
+            }
+
+            logInfoP("Waiting for NFC tag:");
+            initNfc(true, testModeNfcType);
+
+            testModeTimer = delayTimerInit();
+            testModeStep = 12;
+            return;
+
+        case 12:
+            logIndentUp();
             loopNfc(true);
-        logIndentDown();
-    }
+            logIndentDown();
 
-    if (testModeKeypad > 0)
-    {
-        logInfoP("Waiting for keypad input:");
-        logIndentUp();
-        keypadBase->runTestMode();
+            if (testModeNfcFound || delayCheck(testModeTimer, TEST_MODE_NFC_TIMEOUT))
+                testModeStep = 13;
+            return;
 
-        u_int32_t keypadWaitTimer = delayTimerInit();
-        while (!testModeNfcFound && !delayCheck(keypadWaitTimer, 100000))
+        case 13:
+            // keypadBase only exists once setup() ran, i.e. only on a configured device
+            if (!testModeKeypad || keypadBase == nullptr)
+            {
+                testModeStep = 15;
+                return;
+            }
+
+            logInfoP("Waiting for keypad input:");
+            keypadBase->runTestMode();
+
+            testModeTimer = delayTimerInit();
+            testModeStep = 14;
+            return;
+
+        case 14:
+            logIndentUp();
             keypadBase->loop(true);
-        logIndentDown();
-    }
+            logIndentDown();
 
-    logInfoP("Testing finished.");
-    logIndentDown();
+            // testModeNfcFound is the exit flag of this wait as well; the keypad test never sets it,
+            // so the window is always the full timeout
+            if (testModeNfcFound || delayCheck(testModeTimer, TEST_MODE_KEYPAD_TIMEOUT))
+                testModeStep = 15;
+            return;
+
+        default:
+            logInfoP("Testing finished.");
+
+            if (fpOwner == FpOwner::Test)
+                arbiterRelease(FpOwner::Test);
+
+            // the test brought the scanner up with the test password 0 and left the status group object
+            // alone. A scanner which has a password set therefore ends up in Failed, and the continuous
+            // scan pipeline never kicks a bring-up off itself, so scanning would stay dead until the
+            // next reboot. The productive bring-up (real flash password, status group
+            // object) is restarted here; fpPower is forced to Off first because
+            // switchFingerprintPower() never repeats a bring-up which is Ready or Booting. Only on a
+            // configured device: the ETS parameters and the password in the flash are not readable
+            // before setup() ran, and there is no productive pipeline to restore either.
+            if (knx.configured())
+            {
+                fpPower = FpPowerState::Off;
+                fpPowerTestMode = false;
+                switchFingerprintPower(true);
+
+                // the driver only repeats a bring-up which faulted: a scanner which is already up (its
+                // password matched the test password) reports no result anymore, so the ready state is
+                // adopted right here instead of waiting for a callback which never comes
+                if (fpPower == FpPowerState::Booting && finger.isReady())
+                    onFingerprintReady(true);
+            }
+
+            testModeStep = 0;
+            return;
+    }
 }
 
 AccessControl openknxAccessControl;
