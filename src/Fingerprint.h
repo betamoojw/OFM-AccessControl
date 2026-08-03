@@ -2,6 +2,7 @@
 
 //#define CALC_TEMPLATE_CHECKUM
 #define TEMPLATE_SIZE 1536
+#define TEMPLATE_SIZE_PRO 512
 
 #include "Adafruit_Fingerprint.h"
 #include "OpenKNX.h"

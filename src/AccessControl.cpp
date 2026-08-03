@@ -1310,7 +1310,7 @@ void AccessControl::startSyncSend(SyncType syncType, uint16_t syncId, bool loadM
     logInfoP("Sync-Send (syncType=%u): started: syncId=%u, loadModel=%u, syncDelay=%u", syncId, loadModel, ParamACC_SyncDelay);
 
     uint8_t syncTypeCode = 0;
-    uint8_t syncSendBufferTemp[SYNC_BUFFER_SIZE];
+    uint8_t syncSendBufferTemp[SYNC_BUFFER_SIZE] = {0};
     uint32_t storageOffset = 0;
     uint8_t syncData[max(OPENKNX_ACC_FLASH_FINGER_DATA_SIZE, OPENKNX_ACC_FLASH_NFC_DATA_SIZE)] = {};
     switch (syncType)

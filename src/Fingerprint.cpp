@@ -450,7 +450,8 @@ bool Fingerprint::retrieveTemplate(uint8_t templateData[])
 {
     logDebugP("Receive template:");
     logIndentUp();
-    uint8_t p = _finger.get_template_buffer(TEMPLATE_SIZE, templateData);
+    int templateSize = _finger.capacity == 1500 ? TEMPLATE_SIZE_PRO : TEMPLATE_SIZE;
+    uint8_t p = _finger.get_template_buffer(templateSize, templateData);
     logDebugP("Received");
     logIndentDown();
 
@@ -461,7 +462,8 @@ bool Fingerprint::sendTemplate(uint8_t templateData[])
 {
     logDebugP("Send template:");
     logIndentUp();
-    uint8_t p = _finger.write_template_to_sensor(TEMPLATE_SIZE, templateData);
+    int templateSize = _finger.capacity == 1500 ? TEMPLATE_SIZE_PRO : TEMPLATE_SIZE;
+    uint8_t p = _finger.write_template_to_sensor(templateSize, templateData);
     _delayMs(1000); // needed, otherwise store might fail
     logDebugP("Sent");
     logIndentDown();
@@ -475,11 +477,13 @@ bool Fingerprint::writeCrc(uint16_t location, uint8_t *templateData, uint32_t se
     logDebugP("Calculate and store CRC:");
     logIndentUp();
 
-    uint8_t dataWithChecksum[TEMPLATE_SIZE + 4];
-    memcpy(dataWithChecksum, templateData, TEMPLATE_SIZE);
-    memcpy(dataWithChecksum + TEMPLATE_SIZE, &secret, sizeof(secret));
+    int templateSize = _finger.capacity == 1500 ? TEMPLATE_SIZE_PRO : TEMPLATE_SIZE;
 
-    uint16_t checksum = crc16(dataWithChecksum, TEMPLATE_SIZE + 4);
+    uint8_t dataWithChecksum[templateSize + 4];
+    memcpy(dataWithChecksum, templateData, templateSize);
+    memcpy(dataWithChecksum + templateSize, &secret, sizeof(secret));
+
+    uint16_t checksum = crc16(dataWithChecksum, templateSize + 4);
 
     uint8_t checksumBytes[2];
     checksumBytes[0] = checksum & 0xff;
