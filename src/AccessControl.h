@@ -46,6 +46,10 @@
 #define SYNC_AFTER_ENROLL_DELAY 500
 #define SYNC_IGNORE_DELAY 500
 
+// ETS parameter values
+#define VAL_NfcScanner_Wiegand 3
+#define VAL_Keypad_Wiegand 3
+
 #ifdef SCANNER_PWR_PIN
   #define FINGER_PWR_ON    SCANNER_PWR_PIN_ACTIVE_ON == HIGH ? HIGH : LOW
   #define FINGER_PWR_OFF   SCANNER_PWR_PIN_ACTIVE_ON == HIGH ? LOW : HIGH
@@ -224,6 +228,7 @@ class AccessControl : public OpenKNX::Module
     uint32_t readRequestDelay = 0;
 
     bool testModeNfcFound = false;
+    bool nfcWiegand = false;
 
     static KeypadBase *keypadBase;
     uint32_t keypadLastKeypressTimer = 0;

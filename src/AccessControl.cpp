@@ -3,6 +3,8 @@
 #include "KeypadEmpty.h"
 #include "KeypadForGira.h"
 #include "KeypadMatrix3x4.h"
+#include "KeypadWiegand.h"
+#include "Wiegand.h"
 
 Fingerprint *AccessControl::finger = nullptr;
 KeypadBase *AccessControl::keypadBase = nullptr;
@@ -84,6 +86,9 @@ void AccessControl::setup()
         case 2:
             keypadBase = new KeypadMatrix3x4();
             break;
+        case VAL_Keypad_Wiegand:
+            keypadBase = new KeypadWiegand();
+            break;
     
         default:
             keypadBase = new KeypadEmpty();
@@ -119,6 +124,13 @@ void AccessControl::initNfc(bool testMode, uint8_t testModeNfc)
     if (!testMode &&
         ParamACC_NfcScanner == 0)
         return;
+
+    nfcWiegand = testMode ? testModeNfc == VAL_NfcScanner_Wiegand : ParamACC_NfcScanner == VAL_NfcScanner_Wiegand;
+    if (nfcWiegand)
+    {
+        wiegand.init();
+        return;
+    }
 
 #ifdef NCI_DEBUG
     logging::initialize();
@@ -199,6 +211,12 @@ bool AccessControl::switchFingerprintPower(bool on, bool testMode)
 
 void AccessControl::switchLedGreenPower(bool on)
 {
+    if (ParamACC_NfcScanner == VAL_NfcScanner_Wiegand)
+    {
+        wiegand.setLed(on);
+        return;
+    }
+
     if (!ParamACC_EnableTouchPcb &&
         ParamACC_NfcScanner == 0)
         return;
@@ -211,6 +229,14 @@ void AccessControl::switchLedGreenPower(bool on)
 
 void AccessControl::switchLedRedPower(bool on)
 {
+    if (ParamACC_NfcScanner == VAL_NfcScanner_Wiegand)
+    {
+        // reader LED is red as long as it is not switched to green
+        if (on)
+            wiegand.setLed(false);
+        return;
+    }
+
     if (!ParamACC_EnableTouchPcb &&
         ParamACC_NfcScanner == 0)
         return;
@@ -503,18 +529,21 @@ void AccessControl::loopNfc(bool testMode)
         }
     }
 
-    nci::run();
+    uint8_t wiegandCard[WIEGAND_MAX_DATA_BYTES] = {};
+    uint8_t wiegandCardLength = nfcWiegand ? wiegand.getCard(wiegandCard) : 0;
+    if (!nfcWiegand)
+        nci::run();
 
     uint8_t uniqueIdLength;
     const uint8_t* uniqueId;
-    tagStatus currentTagStatus = nci::getTagStatus();
+    tagStatus currentTagStatus = nfcWiegand ? (wiegandCardLength > 0 ? tagStatus::foundNew : tagStatus::absent) : nci::getTagStatus();
     switch (currentTagStatus) {
         case tagStatus::foundNew:
             logDebugP("New tag detected:");
             logIndentUp();
             
-            uniqueIdLength = nci::tagData.getUniqueIdLength();
-            uniqueId = nci::tagData.getUniqueId();
+            uniqueIdLength = nfcWiegand ? wiegandCardLength : nci::tagData.getUniqueIdLength();
+            uniqueId = nfcWiegand ? wiegandCard : nci::tagData.getUniqueId();
 
             logDebugP("uniqueID (length=%d):", uniqueIdLength);
             for (uint8_t index = 0; index < uniqueIdLength; index++)
@@ -609,6 +638,9 @@ void AccessControl::loopNfc(bool testMode)
             logDebugP("Tag removed.");
             break;
     }
+
+    if (nfcWiegand)
+        return;
 
     nciState currentNciState = nci::getState();
     if (currentNciState == nciState::error)
@@ -2789,6 +2821,11 @@ bool AccessControl::processCommand(const std::string cmd, bool diagnoseKo)
         runTestMode(2, false);
         result = true;
     }
+    else if (cmd.length() == 13 && cmd.substr(4, 9) == "test nfc3")
+    {
+        runTestMode(VAL_NfcScanner_Wiegand, false);
+        result = true;
+    }
     else if (cmd.length() == 12 && cmd.substr(4, 8) == "test key")
     {
         runTestMode(0, true);
@@ -2818,26 +2855,37 @@ void AccessControl::runTestMode(uint8_t testModeNfc, bool testModeKeypad)
     logInfoP("Testing LEDs:");
     logIndentUp();
 
-    if (testModeNfc < 2)
+    if (testModeNfc == VAL_NfcScanner_Wiegand)
     {
-        openknx.gpio.pinMode(DIRECT_LED_GREEN_PIN, OUTPUT);
-        openknx.gpio.pinMode(DIRECT_LED_RED_PIN, OUTPUT);
+        logInfoP("Wiegand reader green");
+        wiegand.init();
+        wiegand.setLed(true);
+        delay(1000);
+        wiegand.setLed(false);
     }
     else
     {
-        openknx.gpio.pinMode(EXTERN_LED_GREEN_PIN, OUTPUT);
-        openknx.gpio.pinMode(EXTERN_LED_RED_PIN, OUTPUT);
+        if (testModeNfc < 2)
+        {
+            openknx.gpio.pinMode(DIRECT_LED_GREEN_PIN, OUTPUT);
+            openknx.gpio.pinMode(DIRECT_LED_RED_PIN, OUTPUT);
+        }
+        else
+        {
+            openknx.gpio.pinMode(EXTERN_LED_GREEN_PIN, OUTPUT);
+            openknx.gpio.pinMode(EXTERN_LED_RED_PIN, OUTPUT);
+        }
+
+        logInfoP("Touch buttons red");
+        openknx.gpio.digitalWrite(testModeNfc < 2 ? DIRECT_LED_RED_PIN : EXTERN_LED_RED_PIN, HIGH);
+        delay(1000);
+        openknx.gpio.digitalWrite(testModeNfc < 2 ? DIRECT_LED_RED_PIN : EXTERN_LED_RED_PIN, LOW);
+
+        logInfoP("Touch buttons green");
+        openknx.gpio.digitalWrite(testModeNfc < 2 ? DIRECT_LED_GREEN_PIN : EXTERN_LED_GREEN_PIN, HIGH);
+        delay(1000);
+        openknx.gpio.digitalWrite(testModeNfc < 2 ? DIRECT_LED_GREEN_PIN : EXTERN_LED_GREEN_PIN, LOW);
     }
-
-    logInfoP("Touch buttons red");
-    openknx.gpio.digitalWrite(testModeNfc < 2 ? DIRECT_LED_RED_PIN : EXTERN_LED_RED_PIN, HIGH);
-    delay(1000);
-    openknx.gpio.digitalWrite(testModeNfc < 2 ? DIRECT_LED_RED_PIN : EXTERN_LED_RED_PIN, LOW);
-
-    logInfoP("Touch buttons green");
-    openknx.gpio.digitalWrite(testModeNfc < 2 ? DIRECT_LED_GREEN_PIN : EXTERN_LED_GREEN_PIN, HIGH);
-    delay(1000);
-    openknx.gpio.digitalWrite(testModeNfc < 2 ? DIRECT_LED_GREEN_PIN : EXTERN_LED_GREEN_PIN, LOW);
     logIndentDown();
 
 #ifdef OPENKNX_SWA_SET_PINS

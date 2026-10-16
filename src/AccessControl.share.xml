@@ -81,6 +81,7 @@
                   <Enumeration Text="Kein NFC" Value="0" Id="%ENID%" />
                   <Enumeration Text="Schaltereinsatz mit NFC" Value="1" Id="%ENID%" />
                   <Enumeration Text="Externer NFC-Leser" Value="2" Id="%ENID%" />
+                  <Enumeration Text="Wiegand NFC-Leser" Value="3" Id="%ENID%" />
                 </TypeRestriction>
               </ParameterType>
               <ParameterType Id="%AID%_PT-Keypad" Name="Keypad">
@@ -88,6 +89,7 @@
                   <Enumeration Text="Kein Keypad" Value="0" Id="%ENID%" />
                   <Enumeration Text="Keypad (Touch) für Gira-Front" Value="1" Id="%ENID%" />
                   <Enumeration Text="Keypad (Tastatur 3x4)" Value="2" Id="%ENID%" />
+                  <Enumeration Text="Keypad (Wiegand)" Value="3" Id="%ENID%" />
                 </TypeRestriction>
               </ParameterType>
               <ParameterType Id="%AID%_PT-FingerprintScanner" Name="FingerprintScanner">
@@ -557,7 +559,7 @@
                 </choose>
                 <!-- Touch-PCB with NFC -->
                 <choose ParamRefId="%AID%_UP-%T%000034_R-%T%00003401">
-                  <when test=">0">
+                  <when test="1 2">
                     <!-- TouchButtons und TouchLed -->
                     <ComObjectRefRef RefId="%AID%_O-%T%000051_R-%T%00005101" />
                     <ComObjectRefRef RefId="%AID%_O-%T%000052_R-%T%00005201" />
@@ -867,7 +869,7 @@
                             </when>
                           </choose>
                         </when>
-                        <when test="1 2">
+                        <when test="1 2 3">
                           <!-- Tastenauswertung -->
                           <ParameterRefRef RefId="%AID%_UP-%T%000049_R-%T%00004901" IndentLevel="1" HelpContext="%DOC%" />
                           <choose ParamRefId="%AID%_UP-%T%000049_R-%T%00004901">
@@ -891,7 +893,7 @@
                             <ParameterRefRef RefId="%AID%_UP-%T%000054_R-%T%00005401" Cell="1,4" />
                           </ParameterBlock>
                         </when>
-                        <when test="1">
+                        <when test="1 3">
                           <!-- Feedback-LED -->
                           <ParameterRefRef RefId="%AID%_UP-%T%000051_R-%T%00005101" IndentLevel="1" HelpContext="%DOC%" />
                           <choose ParamRefId="%AID%_UP-%T%000051_R-%T%00005101">
@@ -900,7 +902,7 @@
                             </when>
                           </choose>
                         </when>
-                        <when test="2">
+                        <when test="2 3">
                           <!-- Feedback-Buzzer -->
                           <ParameterRefRef RefId="%AID%_UP-%T%000062_R-%T%00006201" IndentLevel="1" HelpContext="%DOC%" />
                           <choose ParamRefId="%AID%_UP-%T%000062_R-%T%00006201">
@@ -926,7 +928,7 @@
                             </when>
                           </choose>
                         </when>
-                        <when test="2">
+                        <when test="2 3">
                           <!-- termination key short -->
                           <ParameterRefRef RefId="%AID%_UP-%T%000061_R-%T%00006101" IndentLevel="1" HelpContext="%DOC%" />
                           <!-- choose delete key -->
